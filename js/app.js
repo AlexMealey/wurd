@@ -45,6 +45,11 @@
   let documentPassword = null;
   // The Wurd server copy the open document belongs to ({ id, rev }), or null. Save writes back to it.
   let serverFile = null;
+  // The document as last opened or saved; null when unknown, so it counts as changed
+  let cleanHtml = editor.innerHTML;
+  let draftTimer = 0;
+  // The sample the page opens with needs no draft: a reload shows it anyway
+  const SAMPLE = { html: editor.innerHTML, title: docTitle.value };
 
   // ---- Notifications ------------------------------------------------------
 
@@ -144,6 +149,7 @@
       ensureToolbarStop();
       updateStatsAndOutline();
       updateToolStates();
+      scheduleDraft();
     },
   });
 
@@ -157,6 +163,7 @@
     setFormat(format);
     setPageFont(font || Wurd.DEFAULT_FONT);
     documentPassword = password;
+    cleanHtml = editor.innerHTML;
     history.reset();
   };
 
@@ -197,6 +204,7 @@
   const setServerFile = (value) => {
     serverFile = value;
     saveButton.title = serverFile ? 'Save to the Wurd server' : 'Save Document';
+    scheduleDraft();
   };
 
   // Opens a File. fromServer is { id, rev } when it came from the Wurd server.
@@ -221,11 +229,13 @@
   const writeFile = async ({ title, format, password = null, to = 'download' }) => {
     saveButton.disabled = true;
     try {
-      const blob = await Wurd.formats.export(format, documentHtml(), { title, pageFont: fontSelect.value, password });
+      const html = documentHtml();
+      const blob = await Wurd.formats.export(format, html, { title, pageFont: fontSelect.value, password });
       const fileName = Wurd.formats.fileName(title, format);
       const withPassword = password ? ' with a password' : '';
       if (to === 'download') {
         Wurd.downloadBlob(blob, fileName);
+        cleanHtml = html;
         notify(`Saved "${fileName}"${withPassword}`);
         return;
       }
@@ -238,6 +248,7 @@
       updateWindowTitle();
       setFormat(format);
       documentPassword = password;
+      cleanHtml = html;
       refreshServerList();
       notify(`Saved "${fileName}" to the server${withPassword}`);
     } catch (err) {
@@ -285,6 +296,47 @@
     notify('New document created');
   };
 
+  // ---- Drafts -------------------------------------------------------------
+
+  // Keeps the open document for a reload (js/drafts.js). True if a reload will bring it back.
+  const keepDraft = () => {
+    clearTimeout(draftTimer);
+    const html = documentHtml();
+    if (html === SAMPLE.html && docTitle.value === SAMPLE.title && !serverFile) {
+      Wurd.drafts.clear();
+      return true;
+    }
+    return Wurd.drafts.save({
+      html,
+      title: docTitle.value,
+      format: docFormat.dataset.format,
+      font: fontSelect.value,
+      server: serverFile && Wurd.server.connected() ? { url: Wurd.server.url(), ...serverFile } : null,
+      protected: Boolean(documentPassword) || docFormat.dataset.format === 'wurd',
+    });
+  };
+
+  // Kept a second after edits stop, and straight away when the page is left
+  function scheduleDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(keepDraft, 1000);
+  }
+
+  source.addEventListener('input', scheduleDraft);
+
+  // When the document can't be kept (password-protected, too large, drafts off), the browser asks
+  // before a reload or close loses unsaved changes
+  window.addEventListener('beforeunload', (e) => {
+    if (!keepDraft() && documentHtml() !== cleanHtml) e.preventDefault();
+  });
+  // Mobile browsers can skip beforeunload
+  window.addEventListener('pagehide', keepDraft);
+
+  const openSettings = () => {
+    keepDraft();
+    Wurd.dialogs.showSettings({ onChange: keepDraft });
+  };
+
   // ---- Header -------------------------------------------------------------
 
   $('#new-doc').addEventListener('click', newDocument);
@@ -292,6 +344,7 @@
   $('#export-doc').addEventListener('click', exportAs);
   saveButton.addEventListener('click', save);
   $('#shortcuts-help').addEventListener('click', () => Wurd.dialogs.showShortcuts());
+  $('#settings-open').addEventListener('click', openSettings);
 
   fileInput.addEventListener('change', () => {
     const file = fileInput.files?.[0];
@@ -300,7 +353,10 @@
     if (file) openFile(file);
   });
 
-  docTitle.addEventListener('input', updateWindowTitle);
+  docTitle.addEventListener('input', () => {
+    updateWindowTitle();
+    scheduleDraft();
+  });
 
   const syncThemeToggle = () => themeToggle.setAttribute('aria-pressed', String(root.dataset.theme === 'dark'));
   themeToggle.addEventListener('click', () => {
@@ -336,6 +392,7 @@
     // as already being in that font and doesn't mark it
     exec('fontName', e.target.value);
     setPageFont(e.target.value);
+    scheduleDraft();
   });
 
   // The toolbar is one Tab stop; arrow keys, Home and End move between its controls
@@ -701,6 +758,7 @@
     find: () => setFindOpen(true),
     source: toggleSource,
     help: () => Wurd.dialogs.showShortcuts(),
+    settings: openSettings,
   });
 
   // ---- Start --------------------------------------------------------------
@@ -711,6 +769,15 @@
   setZoom(zoom);
   setPageFont(Wurd.DEFAULT_FONT);
   history.reset();
+  // A reload brings back the document that was open
+  const draft = Wurd.drafts.restore();
+  if (draft) {
+    loadDocument(draft);
+    // Whether it had unsaved changes isn't known, so it counts as changed
+    cleanHtml = null;
+    setServerFile(draft.server?.url === Wurd.server.url() ? { id: draft.server.id, rev: draft.server.rev } : null);
+    notify(`Restored "${draft.title || 'Untitled'}" after the reload`);
+  }
   syncServerPanel();
   refreshServerList();
 

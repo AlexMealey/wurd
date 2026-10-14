@@ -1,5 +1,5 @@
 // Modal dialogs (native <dialog>: the rest of the page is inert while one is open, and Esc closes it):
-// Export As, the password prompt and the keyboard shortcuts list
+// Export As, the password prompt, the keyboard shortcuts list and Settings
 (function (Wurd) {
   'use strict';
 
@@ -219,10 +219,28 @@
     show(dialog, close);
   };
 
+  // Settings take effect as they change; onChange runs after each change
+  const showSettings = ({ onChange }) => {
+    const dialog = $('#settings-dialog');
+    const lifetime = $('#settings-draft');
+    const status = $('#settings-draft-status');
+    const change = () => {
+      Wurd.drafts.setMinutes(Number(lifetime.value));
+      onChange();
+      status.textContent = Wurd.drafts.describe();
+    };
+    lifetime.value = String(Wurd.drafts.minutes());
+    status.textContent = Wurd.drafts.describe();
+    lifetime.addEventListener('change', change);
+    dialog.addEventListener('close', () => lifetime.removeEventListener('change', change), { once: true });
+    show(dialog, lifetime);
+  };
+
   Wurd.dialogs = {
     askPassword,
     exportAs,
     showShortcuts,
+    showSettings,
     isOpen: () => Boolean(document.querySelector('dialog[open]')),
   };
 })(window.Wurd = window.Wurd || {});

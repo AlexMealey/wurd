@@ -34,6 +34,7 @@
     { id: 'find', label: 'Find & replace', group: 'View', scope: 'app', keys: { pc: ['Mod+KeyF', 'Mod+KeyH'], mac: ['Mod+KeyF', 'Mod+Shift+KeyH'] } },
     { id: 'source', label: 'Toggle source view', group: 'View', scope: 'app', keys: ['Mod+Alt+KeyU'] },
     { id: 'help', label: 'Keyboard shortcuts', group: 'View', scope: 'app', keys: ['Mod+Slash'] },
+    { id: 'settings', label: 'Settings', group: 'View', scope: 'app', keys: ['Mod+Comma'] },
   ];
 
   const keysFor = (shortcut) => (Array.isArray(shortcut.keys) ? shortcut.keys : shortcut.keys[mac ? 'mac' : 'pc']);
@@ -48,7 +49,7 @@
     };
   };
 
-  const KEY_NAMES = { Slash: '/', Escape: 'Esc' };
+  const KEY_NAMES = { Slash: '/', Comma: ',', Escape: 'Esc' };
   const keyName = (code) => KEY_NAMES[code] || code.replace(/^Key|^Digit/, '');
 
   // Human label: "Ctrl+Shift+Z" on Windows/Linux, "⇧⌘Z" on macOS

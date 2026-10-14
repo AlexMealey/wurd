@@ -57,6 +57,9 @@
           <button type="button" class="icon-btn" id="shortcuts-help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-shortcut="help">
             <i data-lucide="keyboard" class="icon"></i>
           </button>
+          <button type="button" class="icon-btn" id="settings-open" title="Settings" aria-label="Settings" data-shortcut="settings">
+            <i data-lucide="settings" class="icon"></i>
+          </button>
           <button type="button" class="icon-btn theme-toggle" id="theme-toggle" title="Toggle Dark/Light Mode" aria-label="Dark theme" aria-pressed="false">
             <i data-lucide="moon" class="icon theme-toggle__moon"></i>
             <i data-lucide="sun" class="icon theme-toggle__sun"></i>
@@ -334,6 +337,28 @@
       </form>
     </dialog>
 
+    <!-- Settings -->
+    <dialog class="dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <form class="dialog__form" method="dialog">
+        <h2 class="dialog__title" id="settings-title">Settings</h2>
+        <div class="field">
+          <label class="field__label" for="settings-draft">Keep the open document through a reload for</label>
+          <select class="field__input" id="settings-draft" aria-describedby="settings-draft-help settings-draft-status">
+            <option value="0">Off</option>
+            <option value="5">5 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 hour</option>
+          </select>
+          <p class="field__help" id="settings-draft-help">Kept in this tab only, and deleted when the tab closes or the time runs out. Password-protected documents are never kept. When a document isn't kept, the browser asks before a reload loses unsaved changes.</p>
+          <p class="field__help" id="settings-draft-status" aria-live="polite"></p>
+        </div>
+        <div class="dialog__actions">
+          <button type="submit" class="btn btn--primary">Done</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="lib/lucide.min.js"></script>                         <!-- lucide 1.47.0 icons -> window.lucide -->
     <script src="lib/purify.min.js"></script>                         <!-- DOMPurify 3.4.16 (sanitizes opened HTML) -->
     <!-- Loaded on first use by Wurd.loadScript: lib/mammoth.browser.min.js, lib/docx.iife.js, lib/cfb.min.js,
@@ -348,6 +373,7 @@
     <script src="js/formats/wurd.js"></script>
     <script src="js/formats/index.js"></script>
     <script src="js/server.js"></script>
+    <script src="js/drafts.js"></script>
     <script src="js/history.js"></script>
     <script src="js/dialogs.js"></script>
     <script src="js/shortcuts.js"></script>
