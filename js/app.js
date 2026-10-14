@@ -36,12 +36,15 @@
 
   const BLANK_DOCUMENT = '<h1>Untitled Document</h1><p>Start typing your document here...</p>';
   const SAVE_FORMATS = ['docx', 'odt', 'doc', 'html', 'txt', 'wurd'];
+  const ICON_ATTRS = { 'aria-hidden': 'true', focusable: 'false' };
 
   let isSourceMode = false;
   let zoom = 100;
   let toastTimer = null;
   // The open document's password, kept in memory only so Save can re-encrypt it
   let documentPassword = null;
+  // The Wurd server copy the open document belongs to ({ id, rev }), or null. Save writes back to it.
+  let serverFile = null;
 
   // ---- Notifications ------------------------------------------------------
 
@@ -191,13 +194,20 @@
 
   // ---- Files --------------------------------------------------------------
 
-  const openFile = async (file) => {
+  const setServerFile = (value) => {
+    serverFile = value;
+    saveButton.title = serverFile ? 'Save to the Wurd server' : 'Save Document';
+  };
+
+  // Opens a File. fromServer is { id, rev } when it came from the Wurd server.
+  const openFile = async (file, fromServer = null) => {
     try {
       const doc = await Wurd.formats.open(file, {
         askPassword: (options) => Wurd.dialogs.askPassword({ fileName: file.name, ...options }),
       });
       loadDocument(doc);
-      notify(doc.notice || `Loaded "${file.name}"`);
+      setServerFile(fromServer);
+      notify(doc.notice || `Loaded "${file.name}"${fromServer ? ' from the server' : ''}`);
     } catch (err) {
       if (err instanceof Wurd.Cancelled) return;
       if (!(err instanceof Wurd.UserError)) console.error(err);
@@ -207,14 +217,39 @@
 
   const documentHtml = () => (isSourceMode ? Wurd.sanitizeHtml(source.value) : editor.innerHTML);
 
-  const writeFile = async ({ title, format, password = null }) => {
+  // to: 'download', 'server' (the open document's server copy) or 'new-on-server'
+  const writeFile = async ({ title, format, password = null, to = 'download' }) => {
     saveButton.disabled = true;
     try {
       const blob = await Wurd.formats.export(format, documentHtml(), { title, pageFont: fontSelect.value, password });
       const fileName = Wurd.formats.fileName(title, format);
-      Wurd.downloadBlob(blob, fileName);
-      notify(`Saved "${fileName}"${password ? ' with a password' : ''}`);
+      const withPassword = password ? ' with a password' : '';
+      if (to === 'download') {
+        Wurd.downloadBlob(blob, fileName);
+        notify(`Saved "${fileName}"${withPassword}`);
+        return;
+      }
+      const saved = to === 'server'
+        ? await Wurd.server.update(serverFile.id, serverFile.rev, fileName, blob)
+        : await Wurd.server.create(fileName, blob);
+      // The document is now that server file, so Save keeps its name, format and password
+      setServerFile({ id: saved.id, rev: saved.rev });
+      docTitle.value = title;
+      updateWindowTitle();
+      setFormat(format);
+      documentPassword = password;
+      refreshServerList();
+      notify(`Saved "${fileName}" to the server${withPassword}`);
     } catch (err) {
+      if (err instanceof Wurd.server.ServerError && err.status === 412) {
+        notify('This document was changed somewhere else since you opened it. To keep your version, use Export As to save it to the server as a new document.');
+        return;
+      }
+      if (err instanceof Wurd.server.ServerError && err.status === 404 && to === 'server') {
+        setServerFile(null);
+        notify('This document is no longer on the server. Use Export As to save it there again.');
+        return;
+      }
       if (!(err instanceof Wurd.UserError)) console.error(err);
       notify(err instanceof Wurd.UserError ? err.message : `Couldn't save as .${format}: ${err.message}`);
     } finally {
@@ -223,8 +258,13 @@
   };
 
   const exportAs = async () => {
-    const choice = await Wurd.dialogs.exportAs({ title: docTitle.value.trim() || 'Untitled', format: docFormat.dataset.format });
-    if (choice) await writeFile(choice);
+    const choice = await Wurd.dialogs.exportAs({
+      title: docTitle.value.trim() || 'Untitled',
+      format: docFormat.dataset.format,
+      // Offered only with a server connected; preselected when the document already lives there
+      destination: Wurd.server.connected() ? (serverFile ? 'server' : 'download') : null,
+    });
+    if (choice) await writeFile({ ...choice, to: choice.destination === 'server' ? 'new-on-server' : 'download' });
   };
 
   // Save keeps the document's own format (and its password, if it was opened with one)
@@ -235,11 +275,13 @@
       title: docTitle.value.trim() || 'Untitled',
       format,
       password: format === 'odt' || format === 'wurd' ? documentPassword : null,
+      to: serverFile && Wurd.server.connected() ? 'server' : 'download',
     });
   };
 
   const newDocument = () => {
     loadDocument({ html: BLANK_DOCUMENT, title: 'Untitled_Document', format: docFormat.dataset.format, font: fontSelect.value });
+    setServerFile(null);
     notify('New document created');
   };
 
@@ -437,6 +479,7 @@
       panel.hidden = panel.dataset.panel !== tab.dataset.tab;
     });
     if (focus) tab.focus();
+    if (tab.dataset.tab === 'recent') refreshServerList();
   };
 
   tabs.forEach((tab, i) => {
@@ -454,14 +497,163 @@
     });
   });
 
-  document.querySelectorAll('.recent-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      const { title, format } = card.dataset;
-      docTitle.value = title;
-      updateWindowTitle();
-      setFormat(format);
-      notify(`Loaded ${title}.${format}`);
-    });
+  // ---- Wurd server --------------------------------------------------------
+
+  const recentPanel = $('#panel-recent');
+  const recentList = $('#recent-list');
+  const recentEmpty = $('#recent-empty');
+  const serverStatus = $('#server-status');
+  const serverForm = $('#server-form');
+  const serverUrl = $('#server-url');
+  const serverToken = $('#server-token');
+  const serverError = $('#server-error');
+  const serverConnect = $('#server-connect');
+  const serverDisconnect = $('#server-disconnect');
+
+  const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const TIME_UNITS = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+  const timeAgo = (iso) => {
+    const seconds = (Date.parse(iso) - Date.now()) / 1000;
+    const [unit, size] = TIME_UNITS.find(([, s]) => Math.abs(seconds) >= s) || [];
+    return unit ? relativeTime.format(Math.round(seconds / size), unit) : 'just now';
+  };
+
+  const span = (className, text) => {
+    const el = document.createElement('span');
+    el.className = className;
+    el.textContent = text;
+    return el;
+  };
+
+  const showRecentMessage = (text) => {
+    recentEmpty.textContent = text;
+    recentEmpty.hidden = false;
+    recentList.hidden = true;
+  };
+
+  const openServerFile = async (file) => {
+    try {
+      const { file: download, rev } = await Wurd.server.download(file);
+      await openFile(download, { id: file.id, rev });
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      notify(err instanceof Wurd.UserError ? err.message : `Couldn't open "${file.name}" from the server.`);
+    }
+  };
+
+  const deleteServerFile = async (file) => {
+    if (!window.confirm(`Delete "${file.name}" from the server? This can't be undone.`)) return;
+    try {
+      await Wurd.server.remove(file.id, file.rev);
+      if (serverFile?.id === file.id) setServerFile(null);
+      notify(`Deleted "${file.name}" from the server`);
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      notify(err.status === 412 ? `"${file.name}" was changed somewhere else, so it wasn't deleted.` : err instanceof Wurd.UserError ? err.message : `Couldn't delete "${file.name}".`);
+    }
+    // The button is gone once the list refreshes, so keep focus in the panel
+    recentPanel.focus();
+    refreshServerList();
+  };
+
+  const renderServerFile = (file) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'recent-card';
+    if (serverFile?.id === file.id) card.setAttribute('aria-current', 'true');
+    const row = span('recent-card__row', '');
+    row.append(span('recent-card__title', file.name.replace(/\.[^.]+$/, '')), span('recent-card__format', `.${Wurd.formats.extensionOf(file.name)}`));
+    const updated = span('recent-card__updated', timeAgo(file.updatedAt));
+    updated.title = new Date(file.updatedAt).toLocaleString();
+    card.append(row, updated);
+    card.addEventListener('click', () => openServerFile(file));
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'recent-item__delete';
+    remove.title = 'Delete from the server';
+    remove.setAttribute('aria-label', `Delete ${file.name} from the server`);
+    const icon = document.createElement('i');
+    icon.dataset.lucide = 'trash-2';
+    icon.className = 'icon icon--sm';
+    remove.append(icon);
+    remove.addEventListener('click', () => deleteServerFile(file));
+
+    const item = document.createElement('li');
+    item.className = 'recent-item';
+    item.append(card, remove);
+    return item;
+  };
+
+  // Lists the server's documents in the Recent tab, newest first
+  async function refreshServerList() {
+    if (!Wurd.server.connected()) {
+      showRecentMessage('Connect to a Wurd server in the Vault tab to keep your documents there.');
+      return;
+    }
+    let files;
+    try {
+      files = await Wurd.server.list();
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      showRecentMessage(err instanceof Wurd.UserError ? err.message : "Couldn't load the server's documents.");
+      return;
+    }
+    if (files.length === 0) {
+      showRecentMessage('No documents on the server yet. Save one there with Export As.');
+      return;
+    }
+    recentList.replaceChildren(...files.map(renderServerFile));
+    lucide.createIcons({ root: recentList, attrs: ICON_ATTRS });
+    recentEmpty.hidden = true;
+    recentList.hidden = false;
+  }
+
+  const setServerError = (message) => {
+    serverError.textContent = message;
+    serverError.hidden = !message;
+    if (message) serverToken.setAttribute('aria-invalid', 'true');
+    else serverToken.removeAttribute('aria-invalid');
+  };
+
+  const syncServerPanel = () => {
+    const connected = Wurd.server.connected();
+    serverStatus.textContent = connected
+      ? `Connected to ${Wurd.server.url()}. Save and Export As can keep documents there.`
+      : 'Not connected. Documents are saved to this device only.';
+    serverForm.hidden = connected;
+    serverDisconnect.hidden = !connected;
+    // Served by a Wurd server, the API is on the same address
+    if (!connected && !serverUrl.value && /^https?:$/.test(location.protocol)) serverUrl.value = location.origin;
+  };
+
+  serverForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    serverConnect.disabled = true;
+    try {
+      await Wurd.server.connect(serverUrl.value, serverToken.value);
+      serverToken.value = '';
+      setServerError('');
+      syncServerPanel();
+      serverDisconnect.focus();
+      refreshServerList();
+      notify(`Connected to ${Wurd.server.url()}`);
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      setServerError(err instanceof Wurd.UserError ? err.message : `Couldn't connect: ${err.message}`);
+      serverToken.focus();
+    } finally {
+      serverConnect.disabled = false;
+    }
+  });
+
+  serverDisconnect.addEventListener('click', () => {
+    Wurd.server.disconnect();
+    setServerFile(null);
+    syncServerPanel();
+    serverUrl.focus();
+    refreshServerList();
+    notify('Disconnected from the Wurd server');
   });
 
   // ---- Editor -------------------------------------------------------------
@@ -513,13 +705,15 @@
 
   // ---- Start --------------------------------------------------------------
 
-  lucide.createIcons({ attrs: { 'aria-hidden': 'true', focusable: 'false' } });
+  lucide.createIcons({ attrs: ICON_ATTRS });
   syncThemeToggle();
   updateWindowTitle();
   setZoom(zoom);
   setPageFont(Wurd.DEFAULT_FONT);
   history.reset();
+  syncServerPanel();
+  refreshServerList();
 
   // For automated tests and debugging
-  Wurd.app = { history, loadDocument, save, exportAs, openFile, isSourceMode: () => isSourceMode };
+  Wurd.app = { history, loadDocument, save, exportAs, openFile, isSourceMode: () => isSourceMode, serverFile: () => serverFile };
 })(window.Wurd = window.Wurd || {});

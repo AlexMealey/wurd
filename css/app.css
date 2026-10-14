@@ -811,8 +811,38 @@ img {
   transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.recent-card + .recent-card {
+/* A document on the Wurd server: the card opens it, the button beside it deletes it */
+.recent-item {
+  display: flex;
+  gap: 4px;
+}
+
+.recent-item + .recent-item {
   margin-top: 8px;
+}
+
+.recent-item .recent-card {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.recent-card[aria-current="true"] {
+  border-color: #4f46e5;
+}
+
+.recent-item__delete {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.recent-item__delete:hover {
+  background: var(--outline-hover);
+  color: var(--error);
 }
 
 .recent-card:hover {
@@ -876,6 +906,45 @@ img {
 .vault-card__warning {
   color: var(--vault-warning);
   font-size: 11px;
+}
+
+/* Connecting to a Wurd server: the dialog form controls, sized down for the sidebar */
+.server-card {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.server-card > * + *,
+.server-form > * + * {
+  margin-top: 8px;
+}
+
+.server-card__title {
+  color: var(--app-fg);
+}
+
+.server-card .field__label,
+.server-card .field__input,
+.server-card .password__toggle,
+.server-card .btn {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.server-card .field__input {
+  padding: 5px 8px;
+}
+
+.server-card .password__toggle {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.server-card .btn {
+  padding: 6px 12px;
 }
 
 .stats {

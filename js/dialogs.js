@@ -86,8 +86,9 @@
     return result;
   };
 
-  // The Export As dialog. Resolves with { fileName, format, password } or null if cancelled.
-  const exportAs = ({ title, format }) => {
+  // The Export As dialog. Resolves with { title, format, password, destination } or null if cancelled.
+  // destination ('download' or 'server') is offered only when one is given, i.e. a server is connected.
+  const exportAs = ({ title, format, destination = null }) => {
     const dialog = $('#export-dialog');
     const name = $('#export-name');
     const nameError = $('#export-name-error');
@@ -101,6 +102,8 @@
     const confirmError = $('#export-confirm-error');
     const cryptoNote = $('#export-crypto-note');
     const radios = Array.from(dialog.querySelectorAll('input[name="export-format"]'));
+    const destinationField = $('#export-destination');
+    const destinations = Array.from(dialog.querySelectorAll('input[name="export-destination"]'));
     const cryptoOk = Wurd.cryptoAvailable();
     const formats = Object.fromEntries(Wurd.formats.EXPORTS.map((f) => [f.id, f]));
 
@@ -124,6 +127,10 @@
     radios.forEach((r) => {
       r.disabled = r.value === 'wurd' && !cryptoOk;
       r.checked = r.value === (formats[format] && !(format === 'wurd' && !cryptoOk) ? format : 'docx');
+    });
+    destinationField.hidden = !destination;
+    destinations.forEach((r) => {
+      r.checked = r.value === (destination || 'download');
     });
     [password, confirm].forEach((input) => {
       input.value = '';
@@ -157,7 +164,12 @@
           invalid.focus();
           return;
         }
-        const value = { title: fileTitle, format: selected(), password: needsPassword() ? password.value : null };
+        const value = {
+          title: fileTitle,
+          format: selected(),
+          password: needsPassword() ? password.value : null,
+          destination: destination ? destinations.find((r) => r.checked).value : 'download',
+        };
         password.value = '';
         confirm.value = '';
         finish(value);

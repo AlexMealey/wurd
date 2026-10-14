@@ -164,29 +164,8 @@
 
             <section id="panel-recent" role="tabpanel" aria-labelledby="tab-recent" data-panel="recent" tabindex="0" hidden>
               <h2 class="panel-heading">Recent Documents</h2>
-              <div class="recent-list">
-                <button type="button" class="recent-card" data-title="Annual_Strategy_Brief" data-format="docx">
-                  <span class="recent-card__row">
-                    <span class="recent-card__title">Annual_Strategy_Brief</span>
-                    <span class="recent-card__format">.docx</span>
-                  </span>
-                  <span class="recent-card__updated">2 hours ago</span>
-                </button>
-                <button type="button" class="recent-card" data-title="Client_NDA_Confidential" data-format="odt">
-                  <span class="recent-card__row">
-                    <span class="recent-card__title">Client_NDA_Confidential</span>
-                    <span class="recent-card__format">.odt</span>
-                  </span>
-                  <span class="recent-card__updated">Yesterday</span>
-                </button>
-                <button type="button" class="recent-card" data-title="Legacy_Archive_Notes" data-format="doc">
-                  <span class="recent-card__row">
-                    <span class="recent-card__title">Legacy_Archive_Notes</span>
-                    <span class="recent-card__format">.doc</span>
-                  </span>
-                  <span class="recent-card__updated">3 days ago</span>
-                </button>
-              </div>
+              <p class="outline-empty" id="recent-empty">Connect to a Wurd server in the Vault tab to keep your documents there.</p>
+              <ul class="recent-list" id="recent-list" aria-label="Documents on the Wurd server" hidden></ul>
             </section>
 
             <section id="panel-security" role="tabpanel" aria-labelledby="tab-security" data-panel="security" tabindex="0" hidden>
@@ -198,6 +177,30 @@
                 </h3>
                 <p class="vault-card__text">Use Export As to save an encrypted .wurd file, or a password-protected .odt that LibreOffice can open. Files are encrypted with AES-256 on this device before they're saved.</p>
                 <p class="vault-card__warning">Your password is never stored. If you lose it, the document can't be recovered.</p>
+              </div>
+
+              <div class="server-card">
+                <h3 class="vault-card__title server-card__title">
+                  <i data-lucide="server" class="icon"></i>
+                  <span>Wurd server</span>
+                </h3>
+                <p class="vault-card__text" id="server-status" aria-live="polite">Not connected. Documents are saved to this device only.</p>
+                <form class="server-form" id="server-form" novalidate>
+                  <div class="field">
+                    <label class="field__label" for="server-url">Server address</label>
+                    <input class="field__input" type="url" id="server-url" placeholder="http://localhost:8026" autocomplete="url" spellcheck="false" />
+                  </div>
+                  <div class="field">
+                    <label class="field__label" for="server-token">Token</label>
+                    <div class="password">
+                      <input class="field__input" type="password" id="server-token" autocomplete="off" spellcheck="false" aria-describedby="server-error" />
+                      <button type="button" class="password__toggle" aria-controls="server-token" aria-pressed="false" aria-label="Show token">Show</button>
+                    </div>
+                  </div>
+                  <p class="field__error" id="server-error" role="alert" hidden></p>
+                  <button type="submit" class="btn btn--primary" id="server-connect">Connect</button>
+                </form>
+                <button type="button" class="btn btn--secondary" id="server-disconnect" hidden>Disconnect</button>
               </div>
             </section>
           </div>
@@ -253,6 +256,12 @@
           <label class="choice"><input type="radio" name="export-format" value="wurd" /> <span>Encrypted Wurd document</span> <span class="choice__ext">.wurd</span></label>
         </fieldset>
         <p class="field__help" id="export-format-hint" aria-live="polite"></p>
+
+        <fieldset class="field choices" id="export-destination" hidden>
+          <legend class="field__label">Save to</legend>
+          <label class="choice"><input type="radio" name="export-destination" value="download" /> <span>This device (download)</span></label>
+          <label class="choice"><input type="radio" name="export-destination" value="server" /> <span>The Wurd server, as a new document</span></label>
+        </fieldset>
 
         <div class="field field--check" id="export-protect-field">
           <label class="choice"><input type="checkbox" id="export-protect" /> <span>Protect with a password</span></label>
@@ -338,6 +347,7 @@
     <script src="js/formats/odt.js"></script>
     <script src="js/formats/wurd.js"></script>
     <script src="js/formats/index.js"></script>
+    <script src="js/server.js"></script>
     <script src="js/history.js"></script>
     <script src="js/dialogs.js"></script>
     <script src="js/shortcuts.js"></script>
