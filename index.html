@@ -154,7 +154,6 @@
         <aside class="sidebar" aria-label="Document sidebar">
           <div class="tabs" role="tablist" aria-label="Sidebar">
             <button type="button" class="tab is-active" id="tab-outline" role="tab" data-tab="outline" aria-selected="true" aria-controls="panel-outline">Outline</button>
-            <button type="button" class="tab" id="tab-recent" role="tab" data-tab="recent" aria-selected="false" aria-controls="panel-recent" tabindex="-1">Recent</button>
             <button type="button" class="tab" id="tab-security" role="tab" data-tab="security" aria-selected="false" aria-controls="panel-security" tabindex="-1">Vault</button>
           </div>
 
@@ -163,12 +162,6 @@
               <h2 class="panel-heading">Document Structure</h2>
               <p class="outline-empty" id="outline-empty" hidden>No headings yet. Format some text with H1, H2, or H3.</p>
               <ul class="outline" id="outline"></ul>
-            </section>
-
-            <section id="panel-recent" role="tabpanel" aria-labelledby="tab-recent" data-panel="recent" tabindex="0" hidden>
-              <h2 class="panel-heading">Recent Documents</h2>
-              <p class="outline-empty" id="recent-empty">Connect to a Wurd server in the Vault tab to keep your documents there.</p>
-              <ul class="recent-list" id="recent-list" aria-label="Documents on the Wurd server" hidden></ul>
             </section>
 
             <section id="panel-security" role="tabpanel" aria-labelledby="tab-security" data-panel="security" tabindex="0" hidden>
@@ -200,10 +193,28 @@
                       <button type="button" class="password__toggle" aria-controls="server-token" aria-pressed="false" aria-label="Show token">Show</button>
                     </div>
                   </div>
+                  <label class="choice"><input type="checkbox" id="server-remember-url" /> <span>Remember address on this device</span></label>
+                  <label class="choice"><input type="checkbox" id="server-keep-token" checked /> <span>Stay connected in this tab</span></label>
                   <p class="field__error" id="server-error" role="alert" hidden></p>
                   <button type="submit" class="btn btn--primary" id="server-connect">Connect</button>
+                  <p class="vault-card__text">No token yet? Requesting one opens a new, empty vault on this server.</p>
+                  <button type="button" class="btn btn--secondary" id="server-request">Request a token</button>
                 </form>
+                <div class="token-reveal" id="token-reveal" hidden>
+                  <label class="field__label" for="token-new">Your new token</label>
+                  <div class="password">
+                    <input class="field__input" type="text" id="token-new" readonly spellcheck="false" />
+                    <button type="button" class="btn btn--secondary" id="token-copy">Copy</button>
+                  </div>
+                  <p class="vault-card__warning">Shown only once. It's the only key to your files on this server: if you lose it, they can't be recovered.</p>
+                </div>
                 <button type="button" class="btn btn--secondary" id="server-disconnect" hidden>Disconnect</button>
+              </div>
+
+              <div class="vault-files">
+                <h3 class="panel-heading">Your documents</h3>
+                <p class="outline-empty" id="vault-empty">Connect to a Wurd server above to keep your documents there.</p>
+                <ul class="recent-list" id="vault-list" aria-label="Your documents on the Wurd server" hidden></ul>
               </div>
             </section>
           </div>

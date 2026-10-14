@@ -43,7 +43,8 @@
   let toastTimer = null;
   // The open document's password, kept in memory only so Save can re-encrypt it
   let documentPassword = null;
-  // The Wurd server copy the open document belongs to ({ id, rev }), or null. Save writes back to it.
+  // The Wurd server copy the open document belongs to ({ id, rev }), or null. Save writes back to it,
+  // or, while connected, creates one in the vault.
   let serverFile = null;
   // The document as last opened or saved; null when unknown, so it counts as changed
   let cleanHtml = editor.innerHTML;
@@ -201,9 +202,13 @@
 
   // ---- Files --------------------------------------------------------------
 
+  const updateSaveTitle = () => {
+    saveButton.title = Wurd.server.connected() ? 'Save to your vault' : 'Save Document';
+  };
+
   const setServerFile = (value) => {
     serverFile = value;
-    saveButton.title = serverFile ? 'Save to the Wurd server' : 'Save Document';
+    updateSaveTitle();
     scheduleDraft();
   };
 
@@ -250,7 +255,7 @@
       documentPassword = password;
       cleanHtml = html;
       refreshServerList();
-      notify(`Saved "${fileName}" to the server${withPassword}`);
+      notify(`Saved "${fileName}" to your vault${withPassword}`);
     } catch (err) {
       if (err instanceof Wurd.server.ServerError && err.status === 412) {
         notify('This document was changed somewhere else since you opened it. To keep your version, use Export As to save it to the server as a new document.');
@@ -258,7 +263,7 @@
       }
       if (err instanceof Wurd.server.ServerError && err.status === 404 && to === 'server') {
         setServerFile(null);
-        notify('This document is no longer on the server. Use Export As to save it there again.');
+        notify('This document is no longer in your vault. Save again to keep it there as a new document.');
         return;
       }
       if (!(err instanceof Wurd.UserError)) console.error(err);
@@ -268,25 +273,28 @@
     }
   };
 
-  const exportAs = async () => {
+  // toServer preselects the vault, for a Save that needs the dialog (an event passed by a click leaves it unset)
+  const exportAs = async ({ toServer = false } = {}) => {
     const choice = await Wurd.dialogs.exportAs({
       title: docTitle.value.trim() || 'Untitled',
       format: docFormat.dataset.format,
       // Offered only with a server connected; preselected when the document already lives there
-      destination: Wurd.server.connected() ? (serverFile ? 'server' : 'download') : null,
+      destination: Wurd.server.connected() ? (serverFile || toServer ? 'server' : 'download') : null,
     });
     if (choice) await writeFile({ ...choice, to: choice.destination === 'server' ? 'new-on-server' : 'download' });
   };
 
-  // Save keeps the document's own format (and its password, if it was opened with one)
+  // Save keeps the document's own format (and its password, if it was opened with one). While connected
+  // to a Wurd server it goes to the vault: back to the document's copy there, or as a new one.
   const save = () => {
+    const connected = Wurd.server.connected();
     const format = SAVE_FORMATS.includes(docFormat.dataset.format) ? docFormat.dataset.format : 'docx';
-    if (format === 'wurd' && !documentPassword) return exportAs();
+    if (format === 'wurd' && !documentPassword) return exportAs({ toServer: connected });
     return writeFile({
       title: docTitle.value.trim() || 'Untitled',
       format,
       password: format === 'odt' || format === 'wurd' ? documentPassword : null,
-      to: serverFile && Wurd.server.connected() ? 'server' : 'download',
+      to: !connected ? 'download' : serverFile ? 'server' : 'new-on-server',
     });
   };
 
@@ -536,7 +544,7 @@
       panel.hidden = panel.dataset.panel !== tab.dataset.tab;
     });
     if (focus) tab.focus();
-    if (tab.dataset.tab === 'recent') refreshServerList();
+    if (tab.dataset.tab === 'security') refreshServerList();
   };
 
   tabs.forEach((tab, i) => {
@@ -556,16 +564,22 @@
 
   // ---- Wurd server --------------------------------------------------------
 
-  const recentPanel = $('#panel-recent');
-  const recentList = $('#recent-list');
-  const recentEmpty = $('#recent-empty');
+  const vaultPanel = $('#panel-security');
+  const vaultList = $('#vault-list');
+  const vaultEmpty = $('#vault-empty');
   const serverStatus = $('#server-status');
   const serverForm = $('#server-form');
   const serverUrl = $('#server-url');
   const serverToken = $('#server-token');
+  const serverRememberUrl = $('#server-remember-url');
+  const serverKeepToken = $('#server-keep-token');
   const serverError = $('#server-error');
   const serverConnect = $('#server-connect');
+  const serverRequest = $('#server-request');
   const serverDisconnect = $('#server-disconnect');
+  const tokenReveal = $('#token-reveal');
+  const tokenNew = $('#token-new');
+  const tokenCopy = $('#token-copy');
 
   const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   const TIME_UNITS = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
@@ -582,10 +596,10 @@
     return el;
   };
 
-  const showRecentMessage = (text) => {
-    recentEmpty.textContent = text;
-    recentEmpty.hidden = false;
-    recentList.hidden = true;
+  const showVaultMessage = (text) => {
+    vaultEmpty.textContent = text;
+    vaultEmpty.hidden = false;
+    vaultList.hidden = true;
   };
 
   const openServerFile = async (file) => {
@@ -609,7 +623,7 @@
       notify(err.status === 412 ? `"${file.name}" was changed somewhere else, so it wasn't deleted.` : err instanceof Wurd.UserError ? err.message : `Couldn't delete "${file.name}".`);
     }
     // The button is gone once the list refreshes, so keep focus in the panel
-    recentPanel.focus();
+    vaultPanel.focus();
     refreshServerList();
   };
 
@@ -642,10 +656,10 @@
     return item;
   };
 
-  // Lists the server's documents in the Recent tab, newest first
+  // Lists your documents on the server in the Vault tab, newest first
   async function refreshServerList() {
     if (!Wurd.server.connected()) {
-      showRecentMessage('Connect to a Wurd server in the Vault tab to keep your documents there.');
+      showVaultMessage('Connect to a Wurd server above to keep your documents there.');
       return;
     }
     let files;
@@ -653,17 +667,17 @@
       files = await Wurd.server.list();
     } catch (err) {
       if (!(err instanceof Wurd.UserError)) console.error(err);
-      showRecentMessage(err instanceof Wurd.UserError ? err.message : "Couldn't load the server's documents.");
+      showVaultMessage(err instanceof Wurd.UserError ? err.message : "Couldn't load your documents from the server.");
       return;
     }
     if (files.length === 0) {
-      showRecentMessage('No documents on the server yet. Save one there with Export As.');
+      showVaultMessage('No documents in your vault yet. Press Save to keep the open one here.');
       return;
     }
-    recentList.replaceChildren(...files.map(renderServerFile));
-    lucide.createIcons({ root: recentList, attrs: ICON_ATTRS });
-    recentEmpty.hidden = true;
-    recentList.hidden = false;
+    vaultList.replaceChildren(...files.map(renderServerFile));
+    lucide.createIcons({ root: vaultList, attrs: ICON_ATTRS });
+    vaultEmpty.hidden = true;
+    vaultList.hidden = false;
   }
 
   const setServerError = (message) => {
@@ -676,19 +690,27 @@
   const syncServerPanel = () => {
     const connected = Wurd.server.connected();
     serverStatus.textContent = connected
-      ? `Connected to ${Wurd.server.url()}. Save and Export As can keep documents there.`
+      ? `Connected to ${Wurd.server.url()}. Save now keeps documents in your vault.`
       : 'Not connected. Documents are saved to this device only.';
     serverForm.hidden = connected;
     serverDisconnect.hidden = !connected;
-    // Served by a Wurd server, the API is on the same address
-    if (!connected && !serverUrl.value && /^https?:$/.test(location.protocol)) serverUrl.value = location.origin;
+    updateSaveTitle();
+    serverRememberUrl.checked = Boolean(Wurd.server.savedUrl());
+    if (connected) serverKeepToken.checked = Wurd.server.keptInTab();
+    if (!connected && !serverUrl.value) {
+      // Served by a Wurd server, the API is on the same address
+      serverUrl.value = Wurd.server.savedUrl() || (/^https?:$/.test(location.protocol) ? location.origin : '');
+    }
   };
 
   serverForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     serverConnect.disabled = true;
     try {
-      await Wurd.server.connect(serverUrl.value, serverToken.value);
+      await Wurd.server.connect(serverUrl.value, serverToken.value, {
+        rememberUrl: serverRememberUrl.checked,
+        keepInTab: serverKeepToken.checked,
+      });
       serverToken.value = '';
       setServerError('');
       syncServerPanel();
@@ -704,8 +726,41 @@
     }
   });
 
+  // A new token opens a new, empty vault. It's shown once and filled in, ready to connect with.
+  serverRequest.addEventListener('click', async () => {
+    serverRequest.disabled = true;
+    try {
+      const token = await Wurd.server.requestToken(serverUrl.value);
+      tokenNew.value = token;
+      tokenReveal.hidden = false;
+      serverToken.value = token;
+      setServerError('');
+      tokenNew.focus();
+      tokenNew.select();
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      setServerError(err instanceof Wurd.UserError ? err.message : `Couldn't request a token: ${err.message}`);
+    } finally {
+      serverRequest.disabled = false;
+    }
+  });
+
+  tokenCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(tokenNew.value);
+      notify('Token copied. Keep it somewhere safe.');
+    } catch (e) {
+      // No clipboard access (e.g. not a secure context): leave it selected to copy by hand
+      tokenNew.focus();
+      tokenNew.select();
+      notify('Select and copy the token by hand.');
+    }
+  });
+
   serverDisconnect.addEventListener('click', () => {
     Wurd.server.disconnect();
+    tokenReveal.hidden = true;
+    tokenNew.value = '';
     setServerFile(null);
     syncServerPanel();
     serverUrl.focus();

@@ -947,6 +947,35 @@ img {
   padding: 6px 12px;
 }
 
+.server-card .choice {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.server-card .choice input {
+  width: 14px;
+  height: 14px;
+}
+
+/* A token the server just issued: shown once, to copy somewhere safe */
+.token-reveal > * + * {
+  margin-top: 8px;
+}
+
+.token-reveal .field__input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+}
+
+.token-reveal .btn {
+  flex: none;
+}
+
+/* Your documents on the Wurd server, below the connection card */
+.vault-files {
+  margin-top: 16px;
+}
+
 .stats {
   display: flex;
   align-items: center;
