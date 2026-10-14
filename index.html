@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quarterly_Report_2026 – Wurd</title>
+
+    <!-- Everything is loaded locally so the page works fully offline (including from file://) -->
+    <link rel="stylesheet" href="lib/fonts/inter.css" />              <!-- Inter variable font (@fontsource-variable/inter 5.3.0) -->
+    <link rel="stylesheet" href="css/app.css" />
+    <script src="js/theme.js"></script>                               <!-- sets light/dark before first paint -->
+  </head>
+  <body>
+    <a class="skip-link" id="skip-link" href="#editor">Skip to document</a>
+
+    <div class="app">
+      <!-- Screen readers hear notifications from here; the toast below is the visual version -->
+      <div class="sr-only" id="announcer" role="status" aria-live="polite"></div>
+      <div class="toast" id="toast" aria-hidden="true" hidden>
+        <i data-lucide="check" class="icon"></i>
+        <span id="toast-message"></span>
+      </div>
+
+      <!-- Top Header Bar -->
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__logo" aria-hidden="true">W</div>
+          <div>
+            <div class="brand__title-row">
+              <input type="text" id="doc-title" class="doc-title" value="Quarterly_Report_2026" aria-label="Document title" spellcheck="false" />
+              <span id="doc-format" class="format-badge" data-format="docx" title="Save format">.docx</span>
+            </div>
+            <p class="brand__tagline">Wurd &bull; Simple, Secure Word Processing</p>
+          </div>
+        </div>
+
+        <!-- Header Right Actions -->
+        <div class="topbar__actions">
+          <input type="file" id="file-input" accept=".doc,.docx,.odt,.txt,.html,.htm,.wurd" hidden />
+          <button type="button" class="header-btn" id="new-doc" title="New Document" aria-label="New" data-shortcut="new">
+            <i data-lucide="file-text" class="icon"></i>
+            <span class="header-btn__label">New</span>
+          </button>
+          <button type="button" class="header-btn" id="open-doc" title="Open Document" aria-label="Open" data-shortcut="open">
+            <i data-lucide="folder-open" class="icon"></i>
+            <span class="header-btn__label">Open</span>
+          </button>
+          <button type="button" class="header-btn" id="export-doc" title="Export As…" aria-label="Export" data-shortcut="exportAs">
+            <i data-lucide="file-output" class="icon"></i>
+            <span class="header-btn__label">Export</span>
+          </button>
+          <button type="button" class="save-btn" id="save-doc" title="Save Document" data-shortcut="save">
+            <i data-lucide="save" class="icon"></i>
+            <span>Save</span>
+          </button>
+          <div class="divider" aria-hidden="true"></div>
+          <button type="button" class="icon-btn" id="shortcuts-help" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-shortcut="help">
+            <i data-lucide="keyboard" class="icon"></i>
+          </button>
+          <button type="button" class="icon-btn theme-toggle" id="theme-toggle" title="Toggle Dark/Light Mode" aria-label="Dark theme" aria-pressed="false">
+            <i data-lucide="moon" class="icon theme-toggle__moon"></i>
+            <i data-lucide="sun" class="icon theme-toggle__sun"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Ribbon Toolbar: one Tab stop; arrow keys move between controls -->
+      <div class="ribbon" id="ribbon" role="toolbar" aria-label="Formatting">
+        <div class="tool-group tool-group--flush" role="group" aria-label="History">
+          <button type="button" class="tool" id="undo" title="Undo" aria-label="Undo" data-shortcut="undo" disabled><i data-lucide="undo-2" class="icon"></i></button>
+          <button type="button" class="tool" id="redo" title="Redo" aria-label="Redo" data-shortcut="redo" disabled><i data-lucide="redo-2" class="icon"></i></button>
+        </div>
+        <div class="divider" aria-hidden="true"></div>
+
+        <select id="block-format" class="select" aria-label="Paragraph style">
+          <option value="p" selected>Paragraph</option>
+          <option value="h1">Heading 1</option>
+          <option value="h2">Heading 2</option>
+          <option value="h3">Heading 3</option>
+        </select>
+
+        <select id="font-family" class="select select--font" aria-label="Font">
+          <option value="Inter, sans-serif" selected>Inter (Sans)</option>
+          <option value="Georgia, serif">Georgia (Serif)</option>
+          <option value="Courier New, monospace">Courier (Mono)</option>
+        </select>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <div class="tool-group" role="group" aria-label="Text style">
+          <button type="button" class="tool" data-command="bold" title="Bold" aria-label="Bold" aria-pressed="false" data-shortcut="bold"><i data-lucide="bold" class="icon"></i></button>
+          <button type="button" class="tool" data-command="italic" title="Italic" aria-label="Italic" aria-pressed="false" data-shortcut="italic"><i data-lucide="italic" class="icon"></i></button>
+          <button type="button" class="tool" data-command="underline" title="Underline" aria-label="Underline" aria-pressed="false" data-shortcut="underline"><i data-lucide="underline" class="icon"></i></button>
+          <button type="button" class="tool" data-command="strikeThrough" title="Strikethrough" aria-label="Strikethrough" aria-pressed="false" data-shortcut="strikeThrough"><i data-lucide="strikethrough" class="icon"></i></button>
+        </div>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <div class="tool-group" role="group" aria-label="Alignment">
+          <button type="button" class="tool" data-command="justifyLeft" title="Align Left" aria-label="Align left" aria-pressed="false" data-shortcut="justifyLeft"><i data-lucide="align-left" class="icon"></i></button>
+          <button type="button" class="tool" data-command="justifyCenter" title="Center" aria-label="Center" aria-pressed="false" data-shortcut="justifyCenter"><i data-lucide="align-center" class="icon"></i></button>
+          <button type="button" class="tool" data-command="justifyRight" title="Align Right" aria-label="Align right" aria-pressed="false" data-shortcut="justifyRight"><i data-lucide="align-right" class="icon"></i></button>
+          <button type="button" class="tool" data-command="justifyFull" title="Justify" aria-label="Justify" aria-pressed="false" data-shortcut="justifyFull"><i data-lucide="align-justify" class="icon"></i></button>
+        </div>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <div class="tool-group" role="group" aria-label="Lists">
+          <button type="button" class="tool" data-command="insertUnorderedList" title="Bullet List" aria-label="Bulleted list" aria-pressed="false" data-shortcut="insertUnorderedList"><i data-lucide="list" class="icon"></i></button>
+          <button type="button" class="tool" data-command="insertOrderedList" title="Numbered List" aria-label="Numbered list" aria-pressed="false" data-shortcut="insertOrderedList"><i data-lucide="list-ordered" class="icon"></i></button>
+        </div>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <div class="ribbon__utilities" role="group" aria-label="View">
+          <button type="button" class="tool" id="find-toggle" title="Find &amp; Replace" aria-label="Find and replace" aria-expanded="false" aria-controls="findbar" data-shortcut="find">
+            <i data-lucide="search" class="icon"></i>
+          </button>
+          <button type="button" class="source-toggle" id="source-toggle" title="Toggle Source Mode" data-shortcut="source">
+            <i data-lucide="code" class="icon icon--sm"></i>
+            <span class="source-toggle__label" id="source-toggle-label">Source</span>
+          </button>
+          <div class="zoom">
+            <button type="button" class="zoom__btn" id="zoom-out" title="Zoom Out" aria-label="Zoom out"><i data-lucide="zoom-out" class="icon icon--sm"></i></button>
+            <span class="zoom__level" id="zoom-level" aria-live="polite">100%</span>
+            <button type="button" class="zoom__btn" id="zoom-in" title="Zoom In" aria-label="Zoom in"><i data-lucide="zoom-in" class="icon icon--sm"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Find & Replace Bar -->
+      <div class="findbar" id="findbar" role="region" aria-label="Find and replace" hidden>
+        <div class="findbar__field">
+          <i data-lucide="search" class="icon icon--sm findbar__icon"></i>
+          <label class="sr-only" for="find-input">Find</label>
+          <input type="text" id="find-input" placeholder="Find..." />
+        </div>
+        <div class="findbar__field">
+          <label class="sr-only" for="replace-input">Replace with</label>
+          <input type="text" id="replace-input" placeholder="Replace with..." />
+        </div>
+        <button type="button" class="findbar__replace" id="replace-all">Replace All</button>
+        <button type="button" class="findbar__close" id="find-close" title="Close" aria-label="Close find and replace">
+          <i data-lucide="x" class="icon"></i>
+        </button>
+      </div>
+
+      <!-- Workspace Area: Sidebar + Main Canvas -->
+      <div class="workspace">
+        <!-- Left Sidebar -->
+        <aside class="sidebar" aria-label="Document sidebar">
+          <div class="tabs" role="tablist" aria-label="Sidebar">
+            <button type="button" class="tab is-active" id="tab-outline" role="tab" data-tab="outline" aria-selected="true" aria-controls="panel-outline">Outline</button>
+            <button type="button" class="tab" id="tab-recent" role="tab" data-tab="recent" aria-selected="false" aria-controls="panel-recent" tabindex="-1">Recent</button>
+            <button type="button" class="tab" id="tab-security" role="tab" data-tab="security" aria-selected="false" aria-controls="panel-security" tabindex="-1">Vault</button>
+          </div>
+
+          <div class="sidebar__body">
+            <section id="panel-outline" role="tabpanel" aria-labelledby="tab-outline" data-panel="outline" tabindex="0">
+              <h2 class="panel-heading">Document Structure</h2>
+              <p class="outline-empty" id="outline-empty" hidden>No headings yet. Format some text with H1, H2, or H3.</p>
+              <ul class="outline" id="outline"></ul>
+            </section>
+
+            <section id="panel-recent" role="tabpanel" aria-labelledby="tab-recent" data-panel="recent" tabindex="0" hidden>
+              <h2 class="panel-heading">Recent Documents</h2>
+              <div class="recent-list">
+                <button type="button" class="recent-card" data-title="Annual_Strategy_Brief" data-format="docx">
+                  <span class="recent-card__row">
+                    <span class="recent-card__title">Annual_Strategy_Brief</span>
+                    <span class="recent-card__format">.docx</span>
+                  </span>
+                  <span class="recent-card__updated">2 hours ago</span>
+                </button>
+                <button type="button" class="recent-card" data-title="Client_NDA_Confidential" data-format="odt">
+                  <span class="recent-card__row">
+                    <span class="recent-card__title">Client_NDA_Confidential</span>
+                    <span class="recent-card__format">.odt</span>
+                  </span>
+                  <span class="recent-card__updated">Yesterday</span>
+                </button>
+                <button type="button" class="recent-card" data-title="Legacy_Archive_Notes" data-format="doc">
+                  <span class="recent-card__row">
+                    <span class="recent-card__title">Legacy_Archive_Notes</span>
+                    <span class="recent-card__format">.doc</span>
+                  </span>
+                  <span class="recent-card__updated">3 days ago</span>
+                </button>
+              </div>
+            </section>
+
+            <section id="panel-security" role="tabpanel" aria-labelledby="tab-security" data-panel="security" tabindex="0" hidden>
+              <h2 class="panel-heading">Vault</h2>
+              <div class="vault-card">
+                <h3 class="vault-card__title">
+                  <i data-lucide="shield-check" class="icon"></i>
+                  <span>Encrypted export</span>
+                </h3>
+                <p class="vault-card__text">Use Export As to save an encrypted .wurd file, or a password-protected .odt that LibreOffice can open. Files are encrypted with AES-256 on this device before they're saved.</p>
+                <p class="vault-card__warning">Your password is never stored. If you lose it, the document can't be recovered.</p>
+              </div>
+            </section>
+          </div>
+
+          <!-- Quick Doc Stats -->
+          <div class="stats">
+            <span id="word-count">0 words</span>
+            <span id="char-count">0 chars</span>
+            <span id="read-time">~1 min read</span>
+          </div>
+        </aside>
+
+        <!-- Center Document Page Canvas -->
+        <main class="canvas">
+          <div class="page" id="page">
+            <div class="editor" id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document">
+              <h1>Executive Summary</h1>
+              <p>Welcome to <strong>Wurd</strong>, the privacy-first word processing environment engineered for rapid drafting, cross-format document interoperability, and end-to-end security.</p>
+              <h2>Core Architecture &amp; Compatibility</h2>
+              <p>This editor provides seamless fidelity across <em>.docx</em>, <em>.odt</em>, and legacy <em>.doc</em> files while running client-side with zero unauthorized data telemetry.</p>
+              <ul>
+                <li>Client-side zero-knowledge document encryption</li>
+                <li>Instant bi-directional WYSIWYG &amp; HTML Source rendering</li>
+                <li>Automatic structural outline extraction</li>
+              </ul>
+              <h2>Security Posture</h2>
+              <p>All stored artifacts are secured using client-side cryptographic primitives prior to serialization.</p>
+            </div>
+            <textarea class="source" id="source" placeholder="<!-- Raw HTML Source -->" aria-label="HTML source" spellcheck="false" hidden></textarea>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Export As -->
+    <dialog class="dialog" id="export-dialog" aria-labelledby="export-title">
+      <form class="dialog__form" method="dialog" novalidate>
+        <h2 class="dialog__title" id="export-title">Export As</h2>
+
+        <div class="field">
+          <label class="field__label" for="export-name">File name</label>
+          <input class="field__input" type="text" id="export-name" autocomplete="off" spellcheck="false" aria-describedby="export-name-error" />
+          <p class="field__error" id="export-name-error" hidden></p>
+        </div>
+
+        <fieldset class="field choices">
+          <legend class="field__label">Format</legend>
+          <label class="choice"><input type="radio" name="export-format" value="docx" /> <span>Word document</span> <span class="choice__ext">.docx</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="odt" /> <span>OpenDocument text</span> <span class="choice__ext">.odt</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="doc" /> <span>Word 97–2003 document</span> <span class="choice__ext">.doc</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="html" /> <span>Web page</span> <span class="choice__ext">.html</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="txt" /> <span>Plain text</span> <span class="choice__ext">.txt</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="wurd" /> <span>Encrypted Wurd document</span> <span class="choice__ext">.wurd</span></label>
+        </fieldset>
+        <p class="field__help" id="export-format-hint" aria-live="polite"></p>
+
+        <div class="field field--check" id="export-protect-field">
+          <label class="choice"><input type="checkbox" id="export-protect" /> <span>Protect with a password</span></label>
+        </div>
+
+        <div id="export-password-fields" hidden>
+          <div class="field">
+            <label class="field__label" for="export-password">Password</label>
+            <div class="password">
+              <input class="field__input" type="password" id="export-password" autocomplete="new-password" aria-describedby="export-password-help export-password-error" />
+              <button type="button" class="password__toggle" aria-controls="export-password" aria-pressed="false" aria-label="Show password">Show</button>
+            </div>
+            <p class="field__help" id="export-password-help">At least 8 characters. Wurd can't recover a lost password.</p>
+            <p class="field__error" id="export-password-error" hidden></p>
+          </div>
+          <div class="field">
+            <label class="field__label" for="export-confirm">Confirm password</label>
+            <div class="password">
+              <input class="field__input" type="password" id="export-confirm" autocomplete="new-password" aria-describedby="export-confirm-error" />
+              <button type="button" class="password__toggle" aria-controls="export-confirm" aria-pressed="false" aria-label="Show confirmed password">Show</button>
+            </div>
+            <p class="field__error" id="export-confirm-error" hidden></p>
+          </div>
+        </div>
+
+        <p class="field__help" id="export-crypto-note" hidden>Password protection needs the browser's Web Crypto, which isn't available here.</p>
+
+        <div class="dialog__actions">
+          <button type="button" class="btn btn--secondary" id="export-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Export</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Password prompt for opening protected documents -->
+    <dialog class="dialog" id="password-dialog" aria-labelledby="password-title" aria-describedby="password-message">
+      <form class="dialog__form" method="dialog" novalidate>
+        <h2 class="dialog__title" id="password-title">Password required</h2>
+        <p class="dialog__text" id="password-message"></p>
+        <div class="field">
+          <label class="field__label" for="password-input">Password</label>
+          <div class="password">
+            <input class="field__input" type="password" id="password-input" autocomplete="current-password" aria-describedby="password-error" />
+            <button type="button" class="password__toggle" aria-controls="password-input" aria-pressed="false" aria-label="Show password">Show</button>
+          </div>
+          <p class="field__error" id="password-error" role="alert" hidden></p>
+        </div>
+        <div class="dialog__actions">
+          <button type="button" class="btn btn--secondary" id="password-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary">Open</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Keyboard shortcuts -->
+    <dialog class="dialog dialog--wide" id="shortcuts-dialog" aria-labelledby="shortcuts-title">
+      <form class="dialog__form" method="dialog">
+        <h2 class="dialog__title" id="shortcuts-title">Keyboard shortcuts</h2>
+        <div class="shortcuts">
+          <table class="shortcuts__table">
+            <thead class="sr-only">
+              <tr><th scope="col">Action</th><th scope="col">Keys</th></tr>
+            </thead>
+            <tbody id="shortcuts-body"></tbody>
+          </table>
+        </div>
+        <div class="dialog__actions">
+          <button type="submit" class="btn btn--primary" id="shortcuts-close">Close</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="lib/lucide.min.js"></script>                         <!-- lucide 1.47.0 icons -> window.lucide -->
+    <script src="lib/purify.min.js"></script>                         <!-- DOMPurify 3.4.16 (sanitizes opened HTML) -->
+    <!-- Loaded on first use by Wurd.loadScript: lib/mammoth.browser.min.js, lib/docx.iife.js, lib/cfb.min.js,
+         lib/jszip.min.js, lib/argon2.umd.min.js -->
+    <script src="js/util.js"></script>
+    <script src="js/formats/text.js"></script>
+    <script src="js/formats/html.js"></script>
+    <script src="js/formats/docx.js"></script>
+    <script src="js/formats/doc.js"></script>
+    <script src="js/formats/odf-package.js"></script>
+    <script src="js/formats/odt.js"></script>
+    <script src="js/formats/wurd.js"></script>
+    <script src="js/formats/index.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/dialogs.js"></script>
+    <script src="js/shortcuts.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
