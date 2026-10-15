@@ -201,9 +201,14 @@
 
   // ---- Files --------------------------------------------------------------
 
+  // With a server connected, Save keeps documents there
+  const syncSaveTitle = () => {
+    saveButton.title = Wurd.server.connected() ? 'Save to the Wurd server' : 'Save Document';
+  };
+
   const setServerFile = (value) => {
     serverFile = value;
-    saveButton.title = serverFile ? 'Save to the Wurd server' : 'Save Document';
+    syncSaveTitle();
     scheduleDraft();
   };
 
@@ -258,7 +263,7 @@
       }
       if (err instanceof Wurd.server.ServerError && err.status === 404 && to === 'server') {
         setServerFile(null);
-        notify('This document is no longer on the server. Use Export As to save it there again.');
+        notify('This document is no longer on the server. Save again to keep it there as a new document.');
         return;
       }
       if (!(err instanceof Wurd.UserError)) console.error(err);
@@ -272,13 +277,14 @@
     const choice = await Wurd.dialogs.exportAs({
       title: docTitle.value.trim() || 'Untitled',
       format: docFormat.dataset.format,
-      // Offered only with a server connected; preselected when the document already lives there
-      destination: Wurd.server.connected() ? (serverFile ? 'server' : 'download') : null,
+      // Offered only with a server connected, and then preselected
+      destination: Wurd.server.connected() ? 'server' : null,
     });
     if (choice) await writeFile({ ...choice, to: choice.destination === 'server' ? 'new-on-server' : 'download' });
   };
 
-  // Save keeps the document's own format (and its password, if it was opened with one)
+  // Save keeps the document's own format (and its password, if it was opened with one). With a server
+  // connected it goes there: back to the document's server copy, or up as a new one.
   const save = () => {
     const format = SAVE_FORMATS.includes(docFormat.dataset.format) ? docFormat.dataset.format : 'docx';
     if (format === 'wurd' && !documentPassword) return exportAs();
@@ -286,7 +292,7 @@
       title: docTitle.value.trim() || 'Untitled',
       format,
       password: format === 'odt' || format === 'wurd' ? documentPassword : null,
-      to: serverFile && Wurd.server.connected() ? 'server' : 'download',
+      to: Wurd.server.connected() ? (serverFile ? 'server' : 'new-on-server') : 'download',
     });
   };
 
@@ -566,6 +572,11 @@
   const serverError = $('#server-error');
   const serverConnect = $('#server-connect');
   const serverDisconnect = $('#server-disconnect');
+  const serverNewToken = $('#server-new-token');
+  const tokenReveal = $('#server-token-reveal');
+  const tokenRevealValue = $('#server-new-token-value');
+  const tokenCopy = $('#server-copy-token');
+  const tokenDone = $('#server-token-done');
 
   const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   const TIME_UNITS = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
@@ -657,7 +668,7 @@
       return;
     }
     if (files.length === 0) {
-      showRecentMessage('No documents on the server yet. Save one there with Export As.');
+      showRecentMessage('No documents on the server yet. Press Save to keep one there.');
       return;
     }
     recentList.replaceChildren(...files.map(renderServerFile));
@@ -666,20 +677,22 @@
     recentList.hidden = false;
   }
 
-  const setServerError = (message) => {
+  // field is the input the message is about, or null when it isn't about one (e.g. too many requests)
+  const setServerError = (message, field = serverToken) => {
     serverError.textContent = message;
     serverError.hidden = !message;
-    if (message) serverToken.setAttribute('aria-invalid', 'true');
-    else serverToken.removeAttribute('aria-invalid');
+    serverToken.removeAttribute('aria-invalid');
+    if (message && field) field.setAttribute('aria-invalid', 'true');
   };
 
   const syncServerPanel = () => {
     const connected = Wurd.server.connected();
     serverStatus.textContent = connected
-      ? `Connected to ${Wurd.server.url()}. Save and Export As can keep documents there.`
+      ? `Connected to ${Wurd.server.url()}. Save keeps documents there.`
       : 'Not connected. Documents are saved to this device only.';
     serverForm.hidden = connected;
     serverDisconnect.hidden = !connected;
+    syncSaveTitle();
     // Served by a Wurd server, the API is on the same address
     if (!connected && !serverUrl.value && /^https?:$/.test(location.protocol)) serverUrl.value = location.origin;
   };
@@ -704,7 +717,51 @@
     }
   });
 
+  // The new token is shown once, right after it's made; hiding it also drops it from the page
+  const hideNewToken = () => {
+    tokenRevealValue.value = '';
+    tokenReveal.hidden = true;
+  };
+
+  serverNewToken.addEventListener('click', async () => {
+    serverNewToken.disabled = true;
+    try {
+      const token = await Wurd.server.requestToken(serverUrl.value);
+      serverToken.value = '';
+      setServerError('');
+      syncServerPanel();
+      refreshServerList();
+      tokenRevealValue.value = token;
+      tokenReveal.hidden = false;
+      tokenCopy.focus();
+      notify(`Opened a new vault on ${Wurd.server.url()}`);
+    } catch (err) {
+      if (!(err instanceof Wurd.UserError)) console.error(err);
+      setServerError(err instanceof Wurd.UserError ? err.message : `Couldn't get a token: ${err.message}`, null);
+      serverUrl.focus();
+    } finally {
+      serverNewToken.disabled = false;
+    }
+  });
+
+  tokenCopy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(tokenRevealValue.value);
+      notify('Token copied');
+    } catch (e) {
+      // No clipboard access (e.g. a plain-http address other than localhost): select it to copy by hand
+      tokenRevealValue.select();
+      notify("Couldn't copy the token automatically. It's selected, so copy it from there.");
+    }
+  });
+
+  tokenDone.addEventListener('click', () => {
+    hideNewToken();
+    serverDisconnect.focus();
+  });
+
   serverDisconnect.addEventListener('click', () => {
+    hideNewToken();
     Wurd.server.disconnect();
     setServerFile(null);
     syncServerPanel();

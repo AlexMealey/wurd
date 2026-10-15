@@ -947,6 +947,14 @@ img {
   padding: 6px 12px;
 }
 
+.server-token-reveal > * + * {
+  margin-top: 8px;
+}
+
+.server-token-reveal__token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 .stats {
   display: flex;
   align-items: center;

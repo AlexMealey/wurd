@@ -202,7 +202,17 @@
                   </div>
                   <p class="field__error" id="server-error" role="alert" hidden></p>
                   <button type="submit" class="btn btn--primary" id="server-connect">Connect</button>
+                  <p class="vault-card__text">No token yet? Get one to open a new, empty vault on this server.</p>
+                  <button type="button" class="btn btn--secondary" id="server-new-token">Get a new token</button>
                 </form>
+                <div class="server-token-reveal" id="server-token-reveal" hidden>
+                  <p class="vault-card__warning">Copy this token and keep it somewhere safe. It's shown only once and can't be recovered, and you need it to open your documents after disconnecting or on another device.</p>
+                  <div class="password">
+                    <input class="field__input server-token-reveal__token" type="text" id="server-new-token-value" readonly spellcheck="false" aria-label="Your new token" />
+                    <button type="button" class="btn btn--secondary" id="server-copy-token">Copy</button>
+                  </div>
+                  <button type="button" class="btn btn--secondary" id="server-token-done">I've saved it</button>
+                </div>
                 <button type="button" class="btn btn--secondary" id="server-disconnect" hidden>Disconnect</button>
               </div>
             </section>

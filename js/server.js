@@ -31,20 +31,20 @@
     return match ? Number(match[1]) : null;
   };
 
-  const request = async (method, path, { body, headers = {} } = {}, conn = connection) => {
-    if (!conn) throw new Wurd.UserError('Connect to a Wurd server first, in the Vault tab.');
+  // One API call to the server at url; a ServerError if it can't be reached or refuses
+  const send = async (url, path, { method, body, headers = {} }) => {
     let response;
     try {
-      response = await fetch(`${conn.url}/api${path}`, {
+      response = await fetch(`${url}/api${path}`, {
         method,
         body,
-        headers: { Authorization: `Bearer ${conn.token}`, ...headers },
+        headers,
         cache: 'no-store',
         credentials: 'omit',
         referrerPolicy: 'no-referrer',
       });
     } catch (e) {
-      throw new ServerError(`Couldn't reach the Wurd server at ${conn.url}.`, 0);
+      throw new ServerError(`Couldn't reach the Wurd server at ${url}.`, 0);
     }
     if (!response.ok) {
       let message = '';
@@ -56,6 +56,11 @@
       throw new ServerError(message || `The Wurd server answered with error ${response.status}.`, response.status, revOf(response));
     }
     return response;
+  };
+
+  const request = async (method, path, { body, headers = {} } = {}, conn = connection) => {
+    if (!conn) throw new Wurd.UserError('Connect to a Wurd server first, in the Vault tab.');
+    return send(conn.url, path, { method, body, headers: { Authorization: `Bearer ${conn.token}`, ...headers } });
   };
 
   // "http://host:8026/" -> "http://host:8026"; anything that isn't an http(s) address is refused
@@ -83,6 +88,17 @@
     }
   };
 
+  // Asks the server for a new token, which opens a new, empty vault, and connects with it. Returns the
+  // token: the server keeps no copy of it, so this is the only chance to show it.
+  const requestToken = async (urlText) => {
+    const url = normaliseUrl(urlText);
+    const response = await send(url, '/tokens', { method: 'POST' });
+    const { token } = await response.json().catch(() => ({}));
+    if (typeof token !== 'string') throw new ServerError(`${url} didn't answer like a Wurd server.`, response.status);
+    await connect(url, token);
+    return token;
+  };
+
   const disconnect = () => {
     connection = null;
     try {
@@ -97,6 +113,7 @@
   Wurd.server = {
     ServerError,
     connect,
+    requestToken,
     disconnect,
     connected: () => Boolean(connection),
     url: () => connection?.url ?? null,
