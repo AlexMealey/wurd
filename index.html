@@ -5,7 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quarterly_Report_2026 – Wurd</title>
 
-    <!-- Everything is loaded locally so the page works fully offline (including from file://) -->
+    <!-- Installable app (js/pwa.js, sw.js). js/pwa.js gives both theme-color tags the app theme's header colour. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#18181b" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Wurd" />
+
+    <!-- Everything is loaded locally so the page works fully offline: from file://, or served over
+         http(s), where sw.js keeps a copy for the installed app -->
     <link rel="stylesheet" href="lib/fonts/inter.css" />              <!-- Inter variable font (@fontsource-variable/inter 5.3.0) -->
     <link rel="stylesheet" href="css/app.css" />
     <script src="js/theme.js"></script>                               <!-- sets light/dark before first paint -->
@@ -14,6 +25,16 @@
     <a class="skip-link" id="skip-link" href="#editor">Skip to document</a>
 
     <div class="app">
+      <!-- Shown by js/pwa.js when a new version has been downloaded -->
+      <div class="update-banner" id="update-banner" role="region" aria-label="Update" hidden>
+        <i data-lucide="refresh-cw" class="icon"></i>
+        <p class="update-banner__text">A new version of Wurd is ready.</p>
+        <div class="update-banner__actions">
+          <button type="button" class="btn btn--primary" id="update-reload">Reload</button>
+          <button type="button" class="btn btn--secondary" id="update-later">Later</button>
+        </div>
+      </div>
+
       <!-- Screen readers hear notifications from here; the toast below is the visual version -->
       <div class="sr-only" id="announcer" role="status" aria-live="polite"></div>
       <div class="toast" id="toast" aria-hidden="true" hidden>
@@ -37,6 +58,11 @@
         <!-- Header Right Actions -->
         <div class="topbar__actions">
           <input type="file" id="file-input" accept=".doc,.docx,.odt,.txt,.html,.htm,.wurd" hidden />
+          <!-- Shown by js/pwa.js when the browser can install Wurd as an app -->
+          <button type="button" class="header-btn" id="install-app" title="Install Wurd as an app" aria-label="Install app" hidden>
+            <i data-lucide="monitor-down" class="icon"></i>
+            <span class="header-btn__label">Install</span>
+          </button>
           <button type="button" class="header-btn" id="new-doc" title="New Document" aria-label="New" data-shortcut="new">
             <i data-lucide="file-text" class="icon"></i>
             <span class="header-btn__label">New</span>
@@ -378,5 +404,6 @@
     <script src="js/dialogs.js"></script>
     <script src="js/shortcuts.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/pwa.js"></script>
   </body>
 </html>
