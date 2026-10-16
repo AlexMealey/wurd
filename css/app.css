@@ -333,6 +333,40 @@ img {
   animation: fade-in 150ms ease-out;
 }
 
+/* Update banner: stays until dismissed, above the header so it never covers the document */
+.update-banner {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--pressed-border);
+  background: var(--pressed-bg);
+  color: var(--pressed-fg);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.update-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.update-banner__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-banner .btn {
+  padding: 4px 12px;
+}
+
+.update-banner .btn--secondary {
+  border-color: var(--pressed-border);
+}
+
 /* --------------------------------------------------------------------------
    Header
    -------------------------------------------------------------------------- */
