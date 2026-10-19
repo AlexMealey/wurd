@@ -88,12 +88,21 @@ ${lines.join('\n')}
     if (!ok) throw new Error('The OpenDocument package was written incorrectly (mimetype entry).');
   };
 
-  // parts: [{ path, data: string | Uint8Array, mediaType }]
-  const writePackage = async (parts, { password = null, mimeType = ODT_MIME } = {}) => {
+  // ODF's "start key", SHA-256 of the password: all that writing needs. The app keeps this lock, not the password.
+  const createLock = async (password) => {
+    const bytes = utf8.encode(password);
+    try {
+      return { format: 'odt', startKey: new Uint8Array(await subtle().digest('SHA-256', bytes)) };
+    } finally {
+      bytes.fill(0);
+    }
+  };
+
+  // parts: [{ path, data: string | Uint8Array, mediaType }]; startKey (from a lock) encrypts it
+  const writePackage = async (parts, { startKey = null, mimeType = ODT_MIME } = {}) => {
     await Wurd.loadScript('lib/jszip.min.js');
     const zip = new window.JSZip();
     zip.file('mimetype', mimeType, { compression: 'STORE', createFolders: false });
-    const startKey = password ? new Uint8Array(await subtle().digest('SHA-256', utf8.encode(password))) : null;
     const entries = [];
     for (const part of parts) {
       const bytes = typeof part.data === 'string' ? utf8.encode(part.data) : part.data;
@@ -262,7 +271,7 @@ ${lines.join('\n')}
     }
   };
 
-  // Opens a package. Returns { password, readBytes(path), readText(path) }.
+  // Opens a package. Returns { lock, readBytes(path), readText(path) }; lock is null unless it was encrypted.
   const readPackage = async (bytes, { askPassword, mimePattern = /^application\/vnd\.oasis\.opendocument\.text(-template)?$/ } = {}) => {
     await Wurd.loadScript('lib/jszip.min.js');
     let zip;
@@ -276,8 +285,9 @@ ${lines.join('\n')}
     const manifestFile = zip.file('META-INF/manifest.xml');
     const manifest = manifestFile ? parseManifest(await manifestFile.async('string')) : new Map();
     const decoder = new TextDecoder('utf-8');
-    const api = (readBytes, password) => ({
-      password,
+    // The lock is built for writing (always a SHA-256 start key), whichever start key this file was read with
+    const api = async (readBytes, password) => ({
+      lock: password === null ? null : await createLock(password),
       readBytes,
       readText: async (path) => {
         const data = await readBytes(path);
@@ -332,5 +342,5 @@ ${lines.join('\n')}
     }, password);
   };
 
-  F.odfPackage = { write: writePackage, read: readPackage, parseManifest, ODF_VERSION, ODT_MIME };
+  F.odfPackage = { write: writePackage, read: readPackage, lock: createLock, parseManifest, ODF_VERSION, ODT_MIME };
 })(window.Wurd = window.Wurd || {});

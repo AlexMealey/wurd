@@ -41,8 +41,9 @@
   let isSourceMode = false;
   let zoom = 100;
   let toastTimer = null;
-  // The open document's password, kept in memory only so Save can re-encrypt it
-  let documentPassword = null;
+  // The open document's lock (see Wurd.formats.lock), kept in memory only so Save can encrypt it again.
+  // The password itself is never kept.
+  let documentLock = null;
   // The Wurd server copy the open document belongs to ({ id, rev }), or null. Save writes back to it,
   // or, while connected, creates one in the vault.
   let serverFile = null;
@@ -155,7 +156,7 @@
   });
 
   // Puts a document into the editor (or the source view). Everything loaded is sanitized here.
-  const loadDocument = ({ html, title, format, font, password = null }) => {
+  const loadDocument = ({ html, title, format, font, lock = null }) => {
     const clean = Wurd.sanitizeHtml(html);
     editor.innerHTML = clean;
     if (isSourceMode) source.value = format === 'html' ? html : clean;
@@ -163,7 +164,7 @@
     updateWindowTitle();
     setFormat(format);
     setPageFont(font || Wurd.DEFAULT_FONT);
-    documentPassword = password;
+    documentLock = lock;
     cleanHtml = editor.innerHTML;
     history.reset();
   };
@@ -230,14 +231,16 @@
 
   const documentHtml = () => (isSourceMode ? Wurd.sanitizeHtml(source.value) : editor.innerHTML);
 
-  // to: 'download', 'server' (the open document's server copy) or 'new-on-server'
-  const writeFile = async ({ title, format, password = null, to = 'download' }) => {
+  // to: 'download', 'server' (the open document's server copy) or 'new-on-server'. A new password (from
+  // Export As) makes a new lock; Save passes the document's existing one.
+  const writeFile = async ({ title, format, password = null, lock = null, to = 'download' }) => {
     saveButton.disabled = true;
     try {
       const html = documentHtml();
-      const blob = await Wurd.formats.export(format, html, { title, pageFont: fontSelect.value, password });
+      const fileLock = password ? await Wurd.formats.lock(format, password) : lock;
+      const blob = await Wurd.formats.export(format, html, { title, pageFont: fontSelect.value, lock: fileLock });
       const fileName = Wurd.formats.fileName(title, format);
-      const withPassword = password ? ' with a password' : '';
+      const withPassword = fileLock ? ' with a password' : '';
       if (to === 'download') {
         Wurd.downloadBlob(blob, fileName);
         cleanHtml = html;
@@ -247,12 +250,12 @@
       const saved = to === 'server'
         ? await Wurd.server.update(serverFile.id, serverFile.rev, fileName, blob)
         : await Wurd.server.create(fileName, blob);
-      // The document is now that server file, so Save keeps its name, format and password
+      // The document is now that server file, so Save keeps its name, format and lock
       setServerFile({ id: saved.id, rev: saved.rev });
       docTitle.value = title;
       updateWindowTitle();
       setFormat(format);
-      documentPassword = password;
+      documentLock = fileLock;
       cleanHtml = html;
       refreshServerList();
       notify(`Saved "${fileName}" to your vault${withPassword}`);
@@ -284,16 +287,17 @@
     if (choice) await writeFile({ ...choice, to: choice.destination === 'server' ? 'new-on-server' : 'download' });
   };
 
-  // Save keeps the document's own format (and its password, if it was opened with one). While connected
+  // Save keeps the document's own format (and its lock, if it was opened with a password). While connected
   // to a Wurd server it goes to the vault: back to the document's copy there, or as a new one.
   const save = () => {
     const connected = Wurd.server.connected();
     const format = SAVE_FORMATS.includes(docFormat.dataset.format) ? docFormat.dataset.format : 'docx';
-    if (format === 'wurd' && !documentPassword) return exportAs({ toServer: connected });
+    const lock = documentLock?.format === format ? documentLock : null;
+    if (format === 'wurd' && !lock) return exportAs({ toServer: connected });
     return writeFile({
       title: docTitle.value.trim() || 'Untitled',
       format,
-      password: format === 'odt' || format === 'wurd' ? documentPassword : null,
+      lock,
       to: !connected ? 'download' : serverFile ? 'server' : 'new-on-server',
     });
   };
@@ -320,7 +324,7 @@
       format: docFormat.dataset.format,
       font: fontSelect.value,
       server: serverFile && Wurd.server.connected() ? { url: Wurd.server.url(), ...serverFile } : null,
-      protected: Boolean(documentPassword) || docFormat.dataset.format === 'wurd',
+      protected: Boolean(documentLock) || docFormat.dataset.format === 'wurd',
     });
   };
 

@@ -500,7 +500,7 @@
     const container = document.createElement('div');
     convertBlocks(elementsOf(body), container, ctx);
     flushPending(ctx, container);
-    return { html: container.innerHTML || '<p><br></p>', font: styles.pageFont, password: pkg.password };
+    return { html: container.innerHTML || '<p><br></p>', font: styles.pageFont, lock: pkg.lock };
   };
 
   // ---- Export ---------------------------------------------------------------
@@ -910,7 +910,7 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
     return images;
   };
 
-  const exportOdt = async (root, { title, pageFont, password }) => {
+  const exportOdt = async (root, { title, pageFont, lock }) => {
     const pageFace = faceFor(pageFont).name;
     const ctx = { pageFace, textStyles: new Map(), paragraphStyles: new Map(), columnStyles: new Set(), tableCount: 0, images: await prepareImages(root) };
     const body = blocksXml(root.childNodes, ctx, { parent: 'Text_20_body', align: '', inList: false });
@@ -937,7 +937,7 @@ ${fontFaceDecls()}
       { path: 'meta.xml', data: metaXml(title), mediaType: 'text/xml' },
       ...Array.from(ctx.images.values(), (img) => ({ path: img.path, data: img.bytes, mediaType: img.mediaType })),
     ];
-    return F.odfPackage.write(parts, { password });
+    return F.odfPackage.write(parts, { startKey: lock?.format === 'odt' ? lock.startKey : null });
   };
 
   F.odt = { import: importOdt, export: exportOdt };

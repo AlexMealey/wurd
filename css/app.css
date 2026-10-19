@@ -1426,6 +1426,10 @@ img {
   font-weight: 500;
 }
 
+.field__action {
+  align-self: flex-start;
+}
+
 .choice {
   display: flex;
   align-items: center;

@@ -4,7 +4,6 @@
   'use strict';
 
   const $ = (selector) => document.querySelector(selector);
-  const MIN_PASSWORD = 8;
 
   // Opens a dialog and puts focus back where it was when the dialog closes
   const show = (dialog, focusTarget) => {
@@ -21,11 +20,13 @@
     else input.removeAttribute('aria-invalid');
   };
 
-  const resetPasswordToggle = (button) => {
+  const showPassword = (button, shown) => {
     const input = document.getElementById(button.getAttribute('aria-controls'));
-    input.type = 'password';
-    button.setAttribute('aria-pressed', 'false');
+    input.type = shown ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(shown));
   };
+
+  const resetPasswordToggle = (button) => showPassword(button, false);
 
   document.querySelectorAll('.password__toggle').forEach((button) => {
     button.addEventListener('click', () => {
@@ -98,6 +99,8 @@
     const passwordFields = $('#export-password-fields');
     const password = $('#export-password');
     const passwordError = $('#export-password-error');
+    const strengthNote = $('#export-password-strength');
+    const suggestButton = $('#export-suggest');
     const confirm = $('#export-confirm');
     const confirmError = $('#export-confirm-error');
     const cryptoNote = $('#export-crypto-note');
@@ -139,23 +142,86 @@
     setError(name, nameError, '');
     setError(password, passwordError, '');
     setError(confirm, confirmError, '');
+    strengthNote.hidden = true;
     update();
 
     const onChange = () => update();
     dialog.addEventListener('change', onChange);
 
+    // Why a password isn't accepted, or '' if it is. The file name counts as something an attacker would try.
+    const MIN_BITS = Wurd.passwords.MIN_BITS;
+    const passwordProblem = async () => {
+      if (!password.value) return 'Enter a password.';
+      try {
+        const { bits, warning } = await Wurd.passwords.strength(password.value, [name.value]);
+        if (bits >= MIN_BITS) return '';
+        return `Too easy to guess (about ${bits} bits of strength; it needs ${MIN_BITS}).${warning ? ` ${warning}.` : ''} Add more unrelated words, or use Suggest a password.`;
+      } catch (err) {
+        // Without the checker, saving waits rather than accepting a password nobody checked
+        return err instanceof Wurd.UserError ? err.message : "Couldn't check the password's strength.";
+      }
+    };
+
+    // A live estimate while typing; the check that counts runs again on submit
+    let estimate = 0;
+    const showStrength = async () => {
+      const run = ++estimate;
+      if (!password.value) {
+        strengthNote.hidden = true;
+        return;
+      }
+      let text;
+      try {
+        const { bits } = await Wurd.passwords.strength(password.value, [name.value]);
+        text = bits >= MIN_BITS ? `Strong enough: about ${bits} bits.` : `Too easy to guess: about ${bits} bits, needs ${MIN_BITS}.`;
+      } catch (err) {
+        text = err instanceof Wurd.UserError ? err.message : '';
+      }
+      if (run !== estimate) return;
+      strengthNote.textContent = text;
+      strengthNote.hidden = !text;
+    };
+    password.addEventListener('input', showStrength);
+
+    const suggest = async () => {
+      suggestButton.disabled = true;
+      try {
+        const value = await Wurd.passwords.suggest([name.value]);
+        password.value = value;
+        confirm.value = value;
+        // Shown, so it can be copied into a password manager before saving
+        dialog.querySelectorAll('.password__toggle').forEach((button) => showPassword(button, true));
+        setError(password, passwordError, '');
+        setError(confirm, confirmError, '');
+        await showStrength();
+        strengthNote.textContent += ' Copy it somewhere safe, like a password manager, before you save.';
+      } catch (err) {
+        setError(password, passwordError, err instanceof Wurd.UserError ? err.message : "Couldn't suggest a password.");
+      } finally {
+        suggestButton.disabled = false;
+      }
+    };
+    suggestButton.addEventListener('click', suggest);
+
+    let checking = false;
     const result = session(dialog, {
       cancelButton: $('#export-cancel'),
-      onSubmit: (finish) => {
+      onSubmit: async (finish) => {
+        if (checking) return;
         const fileTitle = name.value.trim();
         setError(name, nameError, fileTitle ? '' : 'Enter a file name.');
         let invalid = fileTitle ? null : name;
         if (needsPassword()) {
-          const tooShort = password.value.length < MIN_PASSWORD;
-          setError(password, passwordError, tooShort ? `Use at least ${MIN_PASSWORD} characters.` : '');
-          const mismatch = !tooShort && confirm.value !== password.value;
+          const checked = password.value;
+          checking = true;
+          const problem = await passwordProblem();
+          checking = false;
+          // Cancelled, or the password changed, while it was being checked
+          if (!dialog.open || password.value !== checked) return;
+          setError(password, passwordError, problem);
+          const mismatch = !problem && confirm.value !== password.value;
           setError(confirm, confirmError, mismatch ? "The passwords don't match." : '');
-          invalid = invalid || (tooShort ? password : mismatch ? confirm : null);
+          invalid = invalid || (problem ? password : mismatch ? confirm : null);
         } else {
           setError(password, passwordError, '');
           setError(confirm, confirmError, '');
@@ -175,7 +241,14 @@
         finish(value);
       },
     });
-    result.then(() => dialog.removeEventListener('change', onChange));
+    result.then(() => {
+      dialog.removeEventListener('change', onChange);
+      password.removeEventListener('input', showStrength);
+      suggestButton.removeEventListener('click', suggest);
+      // An estimate still running is dropped, and none is left for the next time the dialog opens
+      estimate += 1;
+      strengthNote.textContent = '';
+    });
     show(dialog, name);
     return result;
   };

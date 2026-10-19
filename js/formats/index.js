@@ -7,11 +7,11 @@
   // Export choices, in the order the Export As dialog lists them
   F.EXPORTS = [
     { id: 'docx', label: 'Word document', hint: 'Opens in Microsoft Word, LibreOffice and Google Docs.' },
-    { id: 'odt', label: 'OpenDocument text', hint: 'Opens in LibreOffice and Word. Can be protected with a password.', encryptable: true },
+    { id: 'odt', label: 'OpenDocument text', hint: "Opens in LibreOffice and Word. Can be protected with a password, using LibreOffice's protection, which is weaker than .wurd's.", encryptable: true },
     { id: 'doc', label: 'Word 97–2003 document', hint: 'An HTML-based .doc that Word and LibreOffice open. Images may not show in Word, so use .docx for images.' },
     { id: 'html', label: 'Web page', hint: 'Opens in any web browser.' },
     { id: 'txt', label: 'Plain text', hint: 'Text only: formatting, images and links are left out.' },
-    { id: 'wurd', label: 'Encrypted Wurd document', hint: 'Encrypted with AES-256. Only Wurd can open it, and only with the password.', encrypted: true },
+    { id: 'wurd', label: 'Encrypted Wurd document', hint: 'Encrypted with AES-256, under a key that takes Argon2id and 64 MB of memory to derive from the password. Only Wurd can open it, and only with the password.', encrypted: true },
   ];
 
   const MIME_TYPES = {
@@ -30,7 +30,7 @@
     return match ? match[1].toLowerCase() : '';
   };
 
-  // Reads a file into { html, title, format, font, password?, notice? }.
+  // Reads a file into { html, title, format, font, lock?, notice? }.
   // html is not yet sanitized: the app sanitizes everything it loads.
   F.open = async (file, options = {}) => {
     const ext = F.extensionOf(file.name);
@@ -65,7 +65,20 @@
     };
   };
 
-  // Writes the document (editor HTML) in a format. ctx: { title, pageFont, password? }
+  // A lock for a new password, for the formats that encrypt: what the app keeps (instead of the password) so
+  // Save can encrypt the document again
+  F.lock = async (format, password) => {
+    switch (format) {
+      case 'wurd':
+        return F.wurd.lock(password);
+      case 'odt':
+        return F.odfPackage.lock(password);
+      default:
+        return null;
+    }
+  };
+
+  // Writes the document (editor HTML) in a format. ctx: { title, pageFont, lock? } (a lock from F.lock or F.open)
   F.export = async (format, html, ctx) => {
     const root = Wurd.documentRoot(html);
     let blob;

@@ -171,7 +171,7 @@
                   <i data-lucide="shield-check" class="icon"></i>
                   <span>Encrypted export</span>
                 </h3>
-                <p class="vault-card__text">Use Export As to save an encrypted .wurd file, or a password-protected .odt that LibreOffice can open. Files are encrypted with AES-256 on this device before they're saved.</p>
+                <p class="vault-card__text">Use Export As to save an encrypted .wurd file, or a password-protected .odt that LibreOffice can open. Files are encrypted with AES-256 on this device before they're saved. For .wurd files, the key comes from your password through Argon2id, which makes every guess slow and memory-hungry.</p>
                 <p class="vault-card__warning">Your password is never stored. If you lose it, the document can't be recovered.</p>
               </div>
 
@@ -285,11 +285,13 @@
           <div class="field">
             <label class="field__label" for="export-password">Password</label>
             <div class="password">
-              <input class="field__input" type="password" id="export-password" autocomplete="new-password" aria-describedby="export-password-help export-password-error" />
+              <input class="field__input" type="password" id="export-password" autocomplete="new-password" aria-describedby="export-password-help export-password-strength export-password-error" />
               <button type="button" class="password__toggle" aria-controls="export-password" aria-pressed="false" aria-label="Show password">Show</button>
             </div>
-            <p class="field__help" id="export-password-help">At least 8 characters. Wurd can't recover a lost password.</p>
+            <p class="field__help" id="export-password-help">Make it hard to guess: several unrelated words, or a long random password. Wurd can't recover a lost password.</p>
+            <p class="field__help" id="export-password-strength" hidden></p>
             <p class="field__error" id="export-password-error" hidden></p>
+            <button type="button" class="btn btn--secondary field__action" id="export-suggest">Suggest a password</button>
           </div>
           <div class="field">
             <label class="field__label" for="export-confirm">Confirm password</label>
@@ -373,7 +375,7 @@
     <script src="lib/lucide.min.js"></script>                         <!-- lucide 1.47.0 icons -> window.lucide -->
     <script src="lib/purify.min.js"></script>                         <!-- DOMPurify 3.4.16 (sanitizes opened HTML) -->
     <!-- Loaded on first use by Wurd.loadScript: lib/mammoth.browser.min.js, lib/docx.iife.js, lib/cfb.min.js,
-         lib/jszip.min.js, lib/argon2.umd.min.js -->
+         lib/jszip.min.js, lib/argon2.umd.min.js (hash-wasm), lib/zxcvbn.js (zxcvbn 4.4.2) -->
     <script src="js/util.js"></script>
     <script src="js/formats/text.js"></script>
     <script src="js/formats/html.js"></script>
@@ -385,6 +387,7 @@
     <script src="js/formats/index.js"></script>
     <script src="js/server.js"></script>
     <script src="js/drafts.js"></script>
+    <script src="js/passwords.js"></script>
     <script src="js/history.js"></script>
     <script src="js/dialogs.js"></script>
     <script src="js/shortcuts.js"></script>
