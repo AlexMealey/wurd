@@ -1,0 +1,31 @@
+{
+  "id": "./",
+  "name": "Wurd",
+  "short_name": "Wurd",
+  "description": "Simple, secure word processing",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f4f5",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+        "application/vnd.oasis.opendocument.text": [".odt"],
+        "application/msword": [".doc"],
+        "text/html": [".html", ".htm"],
+        "text/plain": [".txt"],
+        "application/vnd.wurd+json": [".wurd"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "navigate-new" }
+}

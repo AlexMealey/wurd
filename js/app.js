@@ -54,6 +54,14 @@
 
   // ---- Notifications ------------------------------------------------------
 
+  // Clearing first makes screen readers announce a repeated message again
+  const announce = (msg) => {
+    announcer.textContent = '';
+    setTimeout(() => {
+      announcer.textContent = msg;
+    }, 50);
+  };
+
   const notify = (msg) => {
     toastMessage.textContent = msg;
     toast.hidden = false;
@@ -61,11 +69,7 @@
     toastTimer = setTimeout(() => {
       toast.hidden = true;
     }, 3000);
-    // Clearing first makes screen readers announce a repeated message again
-    announcer.textContent = '';
-    setTimeout(() => {
-      announcer.textContent = msg;
-    }, 50);
+    announce(msg);
   };
 
   // ---- Document state -----------------------------------------------------
@@ -836,6 +840,6 @@
   syncServerPanel();
   refreshServerList();
 
-  // For automated tests and debugging
-  Wurd.app = { history, loadDocument, save, exportAs, openFile, isSourceMode: () => isSourceMode, serverFile: () => serverFile };
+  // For js/pwa.js, automated tests and debugging
+  Wurd.app = { history, loadDocument, save, exportAs, openFile, notify, announce, isSourceMode: () => isSourceMode, serverFile: () => serverFile };
 })(window.Wurd = window.Wurd || {});
