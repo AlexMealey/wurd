@@ -36,7 +36,8 @@
 
         <!-- Header Right Actions -->
         <div class="topbar__actions">
-          <input type="file" id="file-input" accept=".doc,.docx,.odt,.txt,.html,.htm,.wurd" hidden />
+          <input type="file" id="file-input" accept=".doc,.docx,.odt,.odg,.txt,.html,.htm,.wurd" hidden />
+          <input type="file" id="image-input" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/svg+xml" multiple hidden />
           <button type="button" class="header-btn" id="new-doc" title="New Document" aria-label="New" data-shortcut="new">
             <i data-lucide="file-text" class="icon"></i>
             <span class="header-btn__label">New</span>
@@ -82,10 +83,28 @@
           <option value="h3">Heading 3</option>
         </select>
 
+        <!-- Font and size apply to the selection, or to what's typed next -->
         <select id="font-family" class="select select--font" aria-label="Font">
           <option value="Inter, sans-serif" selected>Inter (Sans)</option>
           <option value="Georgia, serif">Georgia (Serif)</option>
           <option value="Courier New, monospace">Courier (Mono)</option>
+        </select>
+
+        <select id="font-size" class="select select--font select--size" aria-label="Font size in points">
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12" selected>12</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="28">28</option>
+          <option value="36">36</option>
+          <option value="48">48</option>
+          <option value="72">72</option>
         </select>
 
         <div class="divider" aria-hidden="true"></div>
@@ -95,6 +114,18 @@
           <button type="button" class="tool" data-command="italic" title="Italic" aria-label="Italic" aria-pressed="false" data-shortcut="italic"><i data-lucide="italic" class="icon"></i></button>
           <button type="button" class="tool" data-command="underline" title="Underline" aria-label="Underline" aria-pressed="false" data-shortcut="underline"><i data-lucide="underline" class="icon"></i></button>
           <button type="button" class="tool" data-command="strikeThrough" title="Strikethrough" aria-label="Strikethrough" aria-pressed="false" data-shortcut="strikeThrough"><i data-lucide="strikethrough" class="icon"></i></button>
+        </div>
+
+        <!-- Each opens a palette; the bar under the icon shows the colour last used -->
+        <div class="tool-group" role="group" aria-label="Colour">
+          <button type="button" class="tool tool--color" id="text-color" title="Text colour" aria-label="Text colour" aria-haspopup="dialog" popovertarget="text-color-palette">
+            <i data-lucide="baseline" class="icon"></i>
+            <span class="tool__swatch" style="--swatch: #C00000" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="tool tool--color" id="highlight-color" title="Highlight" aria-label="Highlight" aria-haspopup="dialog" popovertarget="highlight-palette">
+            <i data-lucide="highlighter" class="icon"></i>
+            <span class="tool__swatch" style="--swatch: #FFFF00" aria-hidden="true"></span>
+          </button>
         </div>
 
         <div class="divider" aria-hidden="true"></div>
@@ -111,6 +142,18 @@
         <div class="tool-group" role="group" aria-label="Lists">
           <button type="button" class="tool" data-command="insertUnorderedList" title="Bullet List" aria-label="Bulleted list" aria-pressed="false" data-shortcut="insertUnorderedList"><i data-lucide="list" class="icon"></i></button>
           <button type="button" class="tool" data-command="insertOrderedList" title="Numbered List" aria-label="Numbered list" aria-pressed="false" data-shortcut="insertOrderedList"><i data-lucide="list-ordered" class="icon"></i></button>
+          <button type="button" class="tool" id="outdent" title="Decrease indent" aria-label="Decrease indent" data-shortcut="outdent"><i data-lucide="indent-decrease" class="icon"></i></button>
+          <button type="button" class="tool" id="indent" title="Increase indent" aria-label="Increase indent" data-shortcut="indent"><i data-lucide="indent-increase" class="icon"></i></button>
+        </div>
+
+        <div class="divider" aria-hidden="true"></div>
+
+        <div class="tool-group" role="group" aria-label="Insert">
+          <button type="button" class="tool" id="insert-link" title="Link" aria-label="Link" aria-haspopup="dialog" data-shortcut="link"><i data-lucide="link" class="icon"></i></button>
+          <button type="button" class="tool" id="insert-image" title="Insert image" aria-label="Insert image"><i data-lucide="image-plus" class="icon"></i></button>
+          <button type="button" class="tool" id="insert-textbox" title="Text box" aria-label="Text box" aria-pressed="false"><i data-lucide="square-dashed-text" class="icon"></i></button>
+          <button type="button" class="tool" id="insert-symbol" title="Special character" aria-label="Insert special character" aria-haspopup="dialog"><i data-lucide="omega" class="icon"></i></button>
+          <button type="button" class="tool" id="insert-page-break" title="Page break" aria-label="Insert page break" data-shortcut="pageBreak"><i data-lucide="separator-horizontal" class="icon"></i></button>
         </div>
 
         <div class="divider" aria-hidden="true"></div>
@@ -129,6 +172,52 @@
             <button type="button" class="zoom__btn" id="zoom-in" title="Zoom In" aria-label="Zoom in"><i data-lucide="zoom-in" class="icon icon--sm"></i></button>
           </div>
         </div>
+      </div>
+
+      <!-- Colour palettes for the ribbon's colour buttons (kept outside the toolbar's arrow-key order) -->
+      <div class="palette" id="text-color-palette" popover role="dialog" aria-label="Text colour" data-property="color">
+        <button type="button" class="palette__none" data-color="">
+          <span class="palette__none-swatch palette__none-swatch--auto" aria-hidden="true"></span>
+          <span>Automatic</span>
+        </button>
+        <div class="palette__grid" role="group" aria-label="Colours">
+          <button type="button" class="swatch" style="--swatch: #000000" data-color="#000000" aria-label="Black" title="Black"></button>
+          <button type="button" class="swatch" style="--swatch: #595959" data-color="#595959" aria-label="Dark grey" title="Dark grey"></button>
+          <button type="button" class="swatch" style="--swatch: #C00000" data-color="#C00000" aria-label="Dark red" title="Dark red"></button>
+          <button type="button" class="swatch" style="--swatch: #FF0000" data-color="#FF0000" aria-label="Red" title="Red"></button>
+          <button type="button" class="swatch" style="--swatch: #E36C09" data-color="#E36C09" aria-label="Orange" title="Orange"></button>
+          <button type="button" class="swatch" style="--swatch: #BF8F00" data-color="#BF8F00" aria-label="Gold" title="Gold"></button>
+          <button type="button" class="swatch" style="--swatch: #00B050" data-color="#00B050" aria-label="Green" title="Green"></button>
+          <button type="button" class="swatch" style="--swatch: #0070C0" data-color="#0070C0" aria-label="Blue" title="Blue"></button>
+          <button type="button" class="swatch" style="--swatch: #1F3864" data-color="#1F3864" aria-label="Navy" title="Navy"></button>
+          <button type="button" class="swatch" style="--swatch: #7030A0" data-color="#7030A0" aria-label="Purple" title="Purple"></button>
+        </div>
+        <label class="palette__custom">
+          <input type="color" class="palette__picker" value="#c00000" />
+          <span>Custom colour…</span>
+        </label>
+      </div>
+
+      <!-- Word's own highlight colours, so a .docx keeps them as highlights -->
+      <div class="palette" id="highlight-palette" popover role="dialog" aria-label="Highlight" data-property="background-color">
+        <button type="button" class="palette__none" data-color="">
+          <span class="palette__none-swatch" aria-hidden="true"></span>
+          <span>No highlight</span>
+        </button>
+        <div class="palette__grid" role="group" aria-label="Highlight colours">
+          <button type="button" class="swatch" style="--swatch: #FFFF00" data-color="#FFFF00" aria-label="Yellow" title="Yellow"></button>
+          <button type="button" class="swatch" style="--swatch: #00FF00" data-color="#00FF00" aria-label="Bright green" title="Bright green"></button>
+          <button type="button" class="swatch" style="--swatch: #00FFFF" data-color="#00FFFF" aria-label="Turquoise" title="Turquoise"></button>
+          <button type="button" class="swatch" style="--swatch: #FF00FF" data-color="#FF00FF" aria-label="Pink" title="Pink"></button>
+          <button type="button" class="swatch" style="--swatch: #C0C0C0" data-color="#C0C0C0" aria-label="Light grey" title="Light grey"></button>
+          <button type="button" class="swatch" style="--swatch: #FF0000" data-color="#FF0000" aria-label="Red" title="Red"></button>
+          <button type="button" class="swatch" style="--swatch: #0000FF" data-color="#0000FF" aria-label="Blue" title="Blue"></button>
+          <button type="button" class="swatch" style="--swatch: #808000" data-color="#808000" aria-label="Dark yellow" title="Dark yellow"></button>
+        </div>
+        <label class="palette__custom">
+          <input type="color" class="palette__picker" value="#ffff00" />
+          <span>Custom colour…</span>
+        </label>
       </div>
 
       <!-- Find & Replace Bar -->
@@ -244,6 +333,15 @@
               <p>All stored artifacts are secured using client-side cryptographic primitives prior to serialization.</p>
             </div>
             <textarea class="source" id="source" placeholder="<!-- Raw HTML Source -->" aria-label="HTML source" spellcheck="false" hidden></textarea>
+            <!-- Handles for the text box the caret is in (js/textbox.js); not part of the document -->
+            <div class="box-tools" id="box-tools" hidden>
+              <div class="box-tools__bar">
+                <button type="button" class="box-tools__btn box-tools__move" id="box-move" title="Move: drag, or use the arrow keys" aria-label="Move text box (arrow keys)"><i data-lucide="move" class="icon icon--sm"></i></button>
+                <button type="button" class="box-tools__btn box-tools__float" id="box-float" aria-pressed="false" title="Free: place the box anywhere, in front of text and images. Off: the box sits in line with the text.">Free</button>
+              </div>
+              <button type="button" class="box-tools__resize" id="box-resize" title="Resize: drag, or use the arrow keys" aria-label="Resize text box (arrow keys)"></button>
+            </div>
+            <div class="box-drop" id="box-drop" hidden></div>
           </div>
         </main>
       </div>
@@ -264,6 +362,7 @@
           <legend class="field__label">Format</legend>
           <label class="choice"><input type="radio" name="export-format" value="docx" /> <span>Word document</span> <span class="choice__ext">.docx</span></label>
           <label class="choice"><input type="radio" name="export-format" value="odt" /> <span>OpenDocument text</span> <span class="choice__ext">.odt</span></label>
+          <label class="choice"><input type="radio" name="export-format" value="odg" /> <span>OpenDocument drawing</span> <span class="choice__ext">.odg</span></label>
           <label class="choice"><input type="radio" name="export-format" value="doc" /> <span>Word 97–2003 document</span> <span class="choice__ext">.doc</span></label>
           <label class="choice"><input type="radio" name="export-format" value="html" /> <span>Web page</span> <span class="choice__ext">.html</span></label>
           <label class="choice"><input type="radio" name="export-format" value="txt" /> <span>Plain text</span> <span class="choice__ext">.txt</span></label>
@@ -348,10 +447,51 @@
       </form>
     </dialog>
 
+    <!-- Link: insert, change or remove -->
+    <dialog class="dialog" id="link-dialog" aria-labelledby="link-title">
+      <form class="dialog__form" method="dialog" novalidate>
+        <h2 class="dialog__title" id="link-title">Insert link</h2>
+        <div class="field" id="link-text-field">
+          <label class="field__label" for="link-text">Text to show</label>
+          <input class="field__input" type="text" id="link-text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label class="field__label" for="link-url">Address</label>
+          <input class="field__input" type="text" id="link-url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="example.com or name@example.com" aria-describedby="link-url-help link-url-error" />
+          <p class="field__help" id="link-url-help"></p>
+          <p class="field__error" id="link-url-error" hidden></p>
+        </div>
+        <div class="dialog__actions">
+          <button type="button" class="btn btn--secondary dialog__action-start" id="link-remove" hidden>Remove link</button>
+          <button type="button" class="btn btn--secondary" id="link-cancel">Cancel</button>
+          <button type="submit" class="btn btn--primary" id="link-submit">Insert</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Special characters: the grid is built by js/dialogs.js from Wurd.insert.SYMBOLS -->
+    <dialog class="dialog dialog--wide" id="symbols-dialog" aria-labelledby="symbols-title">
+      <form class="dialog__form" method="dialog">
+        <h2 class="dialog__title" id="symbols-title">Special characters</h2>
+        <div class="symbols" id="symbols-body"></div>
+        <div class="dialog__actions">
+          <button type="button" class="btn btn--secondary" id="symbols-cancel">Close</button>
+        </div>
+      </form>
+    </dialog>
+
     <!-- Settings -->
     <dialog class="dialog" id="settings-dialog" aria-labelledby="settings-title">
       <form class="dialog__form" method="dialog">
         <h2 class="dialog__title" id="settings-title">Settings</h2>
+        <div class="field">
+          <label class="field__label" for="settings-page-size">Page size</label>
+          <select class="field__input" id="settings-page-size" aria-describedby="settings-page-size-help">
+            <option value="a4">A4 (210 × 297 mm)</option>
+            <option value="letter">Letter (8.5 × 11 in)</option>
+          </select>
+          <p class="field__help" id="settings-page-size-help">Used for the page on screen and for saved .docx, .odt, .odg, .doc and .html files.</p>
+        </div>
         <div class="field">
           <label class="field__label" for="settings-draft">Keep the open document through a reload for</label>
           <select class="field__input" id="settings-draft" aria-describedby="settings-draft-help settings-draft-status">
@@ -386,6 +526,9 @@
     <script src="js/server.js"></script>
     <script src="js/drafts.js"></script>
     <script src="js/history.js"></script>
+    <script src="js/formatting.js"></script>
+    <script src="js/insert.js"></script>
+    <script src="js/textbox.js"></script>
     <script src="js/dialogs.js"></script>
     <script src="js/shortcuts.js"></script>
     <script src="js/app.js"></script>

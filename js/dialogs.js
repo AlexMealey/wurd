@@ -6,10 +6,11 @@
   const $ = (selector) => document.querySelector(selector);
   const MIN_PASSWORD = 8;
 
-  // Opens a dialog and puts focus back where it was when the dialog closes
-  const show = (dialog, focusTarget) => {
+  // Opens a dialog and puts focus back where it was when the dialog closes. Dialogs that edit
+  // the document pass restoreFocus: false; the app puts the caret back itself.
+  const show = (dialog, focusTarget, { restoreFocus = true } = {}) => {
     const opener = document.activeElement;
-    dialog.addEventListener('close', () => opener?.focus?.({ preventScroll: true }), { once: true });
+    if (restoreFocus) dialog.addEventListener('close', () => opener?.focus?.({ preventScroll: true }), { once: true });
     dialog.showModal();
     focusTarget?.focus();
   };
@@ -219,21 +220,147 @@
     show(dialog, close);
   };
 
-  // Settings take effect as they change; onChange runs after each change
-  const showSettings = ({ onChange }) => {
+  // Settings take effect as they change; onChange runs after a draft setting changes,
+  // onPageSize after the page size does
+  const showSettings = ({ onChange, onPageSize }) => {
     const dialog = $('#settings-dialog');
     const lifetime = $('#settings-draft');
     const status = $('#settings-draft-status');
+    const pageSize = $('#settings-page-size');
     const change = () => {
       Wurd.drafts.setMinutes(Number(lifetime.value));
       onChange();
       status.textContent = Wurd.drafts.describe();
     };
+    const changeSize = () => {
+      Wurd.setPageSize(pageSize.value);
+      onPageSize?.(Wurd.pageSize());
+    };
     lifetime.value = String(Wurd.drafts.minutes());
+    pageSize.value = Wurd.pageSize();
     status.textContent = Wurd.drafts.describe();
     lifetime.addEventListener('change', change);
-    dialog.addEventListener('close', () => lifetime.removeEventListener('change', change), { once: true });
-    show(dialog, lifetime);
+    pageSize.addEventListener('change', changeSize);
+    dialog.addEventListener('close', () => {
+      lifetime.removeEventListener('change', change);
+      pageSize.removeEventListener('change', changeSize);
+    }, { once: true });
+    show(dialog, pageSize);
+  };
+
+  // Insert, change or remove a link. Resolves with { href, text }, { remove: true }, or null if cancelled.
+  // text is offered when inserting at a caret or editing a link; editing also offers Remove.
+  const editLink = ({ href = '', text = '', showText = true, editing = false } = {}) => {
+    const dialog = $('#link-dialog');
+    const title = $('#link-title');
+    const textField = $('#link-text-field');
+    const textInput = $('#link-text');
+    const url = $('#link-url');
+    const help = $('#link-url-help');
+    const error = $('#link-url-error');
+    const remove = $('#link-remove');
+    const submit = $('#link-submit');
+    title.textContent = editing ? 'Edit link' : 'Insert link';
+    submit.textContent = editing ? 'Save' : 'Insert';
+    textField.hidden = !showText;
+    textInput.value = text;
+    url.value = href.replace(/^mailto:/i, '');
+    remove.hidden = !editing;
+    help.textContent = `A web or email address. ${Wurd.shortcuts.isMac() ? '⌘' : 'Ctrl'}+click a link in the document to open it.`;
+    setError(url, error, '');
+    let removed = false;
+    const onRemove = () => {
+      removed = true;
+      dialog.querySelector('form').requestSubmit();
+    };
+    remove.addEventListener('click', onRemove);
+    const result = session(dialog, {
+      cancelButton: $('#link-cancel'),
+      onSubmit: (finish) => {
+        if (removed) {
+          finish({ remove: true });
+          return;
+        }
+        const target = Wurd.insert.normalizeUrl(url.value);
+        if (!target) {
+          setError(url, error, url.value.trim() ? 'Use a web address (like example.com) or an email address.' : 'Enter an address.');
+          url.focus();
+          return;
+        }
+        finish({ href: target, text: showText ? textInput.value.trim() : '' });
+      },
+    });
+    result.then(() => remove.removeEventListener('click', onRemove));
+    show(dialog, url, { restoreFocus: false });
+    return result;
+  };
+
+  // The special characters most recently inserted, newest first (kept on this device)
+  const RECENT_KEY = 'wurd-recent-symbols';
+  const MAX_RECENT = 8;
+  const recentSymbols = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(RECENT_KEY));
+      return Array.isArray(saved) ? saved.filter((c) => typeof c === 'string' && c.length <= 4).slice(0, MAX_RECENT) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+  const rememberSymbol = (ch) => {
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify([ch, ...recentSymbols().filter((c) => c !== ch)].slice(0, MAX_RECENT)));
+    } catch (e) {
+      // Storage unavailable: nothing is remembered
+    }
+  };
+
+  const codeOf = (ch) => `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+
+  // The special characters dialog. Resolves with the character picked, or null.
+  const pickSymbol = () => {
+    const dialog = $('#symbols-dialog');
+    const body = $('#symbols-body');
+    const names = new Map(Wurd.insert.SYMBOLS.flatMap((g) => g.chars));
+    const groups = [...Wurd.insert.SYMBOLS];
+    const recent = recentSymbols().filter((c) => names.has(c));
+    if (recent.length) groups.unshift({ group: 'Recently used', chars: recent.map((c) => [c, names.get(c)]) });
+    let picked = null;
+    body.replaceChildren(...groups.map((g, i) => {
+      const section = document.createElement('section');
+      section.className = 'symbols__group';
+      const heading = document.createElement('h3');
+      heading.className = 'symbols__heading';
+      heading.id = `symbols-group-${i}`;
+      heading.textContent = g.group;
+      const grid = document.createElement('div');
+      grid.className = 'symbols__grid';
+      grid.setAttribute('role', 'group');
+      grid.setAttribute('aria-labelledby', heading.id);
+      grid.append(...g.chars.map(([ch, name]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'symbol';
+        button.textContent = ch;
+        button.setAttribute('aria-label', name);
+        button.title = `${name} (${codeOf(ch)})`;
+        button.addEventListener('click', () => {
+          picked = ch;
+          dialog.querySelector('form').requestSubmit();
+        });
+        return button;
+      }));
+      section.append(heading, grid);
+      return section;
+    }));
+    const result = session(dialog, {
+      cancelButton: $('#symbols-cancel'),
+      onSubmit: (finish) => {
+        if (picked) rememberSymbol(picked);
+        finish(picked);
+      },
+    });
+    show(dialog, body.querySelector('.symbol'), { restoreFocus: false });
+    return result;
   };
 
   Wurd.dialogs = {
@@ -241,6 +368,8 @@
     exportAs,
     showShortcuts,
     showSettings,
+    editLink,
+    pickSymbol,
     isOpen: () => Boolean(document.querySelector('dialog[open]')),
   };
 })(window.Wurd = window.Wurd || {});

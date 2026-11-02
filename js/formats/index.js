@@ -8,6 +8,7 @@
   F.EXPORTS = [
     { id: 'docx', label: 'Word document', hint: 'Opens in Microsoft Word, LibreOffice and Google Docs.' },
     { id: 'odt', label: 'OpenDocument text', hint: 'Opens in LibreOffice and Word. Can be protected with a password.', encryptable: true },
+    { id: 'odg', label: 'OpenDocument drawing', hint: 'Opens in LibreOffice Draw. Each page becomes a drawing page and free text boxes keep their places. Can be protected with a password.', encryptable: true },
     { id: 'doc', label: 'Word 97–2003 document', hint: 'An HTML-based .doc that Word and LibreOffice open. Images may not show in Word, so use .docx for images.' },
     { id: 'html', label: 'Web page', hint: 'Opens in any web browser.' },
     { id: 'txt', label: 'Plain text', hint: 'Text only: formatting, images and links are left out.' },
@@ -17,13 +18,14 @@
   const MIME_TYPES = {
     docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     odt: 'application/vnd.oasis.opendocument.text',
+    odg: 'application/vnd.oasis.opendocument.graphics',
     doc: 'application/msword',
     html: 'text/html;charset=utf-8',
     txt: 'text/plain;charset=utf-8',
     wurd: 'application/json',
   };
 
-  F.OPENABLE = ['docx', 'odt', 'doc', 'html', 'htm', 'txt', 'wurd'];
+  F.OPENABLE = ['docx', 'odt', 'odg', 'doc', 'html', 'htm', 'txt', 'wurd'];
 
   F.extensionOf = (name) => {
     const match = /\.([^./\\]+)$/.exec(name || '');
@@ -51,11 +53,14 @@
       case 'odt':
         result = await F.odt.import(bytes, options);
         break;
+      case 'odg':
+        result = await F.odg.import(bytes, options);
+        break;
       case 'wurd':
         result = await F.wurd.import(bytes, options);
         break;
       default:
-        throw new Wurd.UserError(`Wurd can't open .${ext || 'unknown'} files. Open a .docx, .odt, .doc, .html, .txt or .wurd file.`);
+        throw new Wurd.UserError(`Wurd can't open .${ext || 'unknown'} files. Open a .docx, .odt, .odg, .doc, .html, .txt or .wurd file.`);
     }
     return {
       title: file.name.replace(/\.[^/.]+$/, ''),
@@ -65,7 +70,8 @@
     };
   };
 
-  // Writes the document (editor HTML) in a format. ctx: { title, pageFont, password? }
+  // Writes the document (editor HTML) in a format. ctx: { title, pageFont, pageSize ('a4' | 'letter'), password?,
+  // boxLayout? (where free text boxes sit on their pages, for .odg; see Wurd.textboxes.layout) }
   F.export = async (format, html, ctx) => {
     const root = Wurd.documentRoot(html);
     let blob;
@@ -75,6 +81,9 @@
         break;
       case 'odt':
         blob = await F.odt.export(root, ctx);
+        break;
+      case 'odg':
+        blob = await F.odg.export(root, ctx);
         break;
       case 'doc':
         blob = F.word.exportDoc(root, ctx);
