@@ -448,7 +448,8 @@ img {
   color: var(--badge-docx);
 }
 
-.format-badge[data-format="odt"] {
+.format-badge[data-format="odt"],
+.format-badge[data-format="odg"] {
   border-color: rgb(16 185 129 / 0.2);
   background: rgb(16 185 129 / 0.1);
   color: var(--badge-odt);
@@ -599,6 +600,103 @@ img {
 
 .select--font {
   display: none;
+}
+
+/* Colour buttons: the icon over a bar showing the colour last used */
+.tool--color {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 6px 3px;
+}
+
+.tool__swatch {
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.15);
+}
+
+/* Colour palettes (popovers, placed under their button by js/app.js) */
+.palette {
+  position: fixed;
+  inset: auto;
+  width: 232px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--header-bg);
+  color: var(--app-fg);
+  box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.25);
+}
+
+.palette:popover-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.palette__none,
+.palette__custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.palette__none:hover,
+.palette__custom:hover {
+  background: var(--tool-hover);
+}
+
+.palette__none-swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  /* A red diagonal: no colour */
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--error) calc(50% - 1px), var(--error) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.palette__none-swatch--auto {
+  background: var(--page-fg);
+}
+
+.palette__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.swatch {
+  height: 32px;
+  border-radius: 4px;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+}
+
+.swatch:hover {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.palette__picker {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
 }
 
 .ribbon__utilities {
@@ -1040,9 +1138,17 @@ img {
   background: var(--canvas-bg);
 }
 
+/* The page is drawn at its real paper width (A4 unless Settings says Letter) when there's room,
+   and narrower, keeping its proportions, when there isn't */
 .page {
+  position: relative;
+  --page-width: 210mm;
+  --page-height: 297mm;
+  /* 1in margins as a share of the page width */
+  --page-margin: 12.1%;
+  flex-shrink: 0;
   width: 100%;
-  max-width: 768px;
+  max-width: var(--page-width);
   font-family: Inter, sans-serif;
   transform-origin: top center;
   transition: transform 150ms ease-out;
@@ -1054,9 +1160,17 @@ img {
   user-select: text;
 }
 
+.page[data-size="letter"] {
+  --page-width: 8.5in;
+  --page-height: 11in;
+  --page-margin: 11.8%;
+}
+
 .editor {
+  /* Free text boxes are positioned on the page */
+  position: relative;
   width: 100%;
-  min-height: 100vh;
+  min-height: var(--page-height);
   padding: 32px;
   border: 1px solid var(--page-border);
   border-radius: 8px;
@@ -1230,9 +1344,175 @@ img {
   color: inherit;
 }
 
+/* Inline, like a character, the way word processors place pictures */
 .editor img {
-  margin-top: 2em;
-  margin-bottom: 2em;
+  display: inline;
+  max-width: 100%;
+  height: auto;
+  vertical-align: baseline;
+}
+
+/* Text boxes: a bordered box in the flow of the text */
+.editor .wurd-textbox {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding: 0.75em 1em;
+  border: 1px solid var(--control-border);
+  border-radius: 2px;
+}
+
+.editor .wurd-textbox > :first-child {
+  margin-top: 0;
+}
+
+/* A free text box: in front of the text and images, with the page's colour behind its own text */
+.editor .wurd-textbox--float {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  background: var(--page-bg);
+}
+
+/* A box with no outline (a drawing's text frame): it shows its edge only while pointed at */
+.editor .wurd-textbox--plain {
+  padding: 0.15em 0.25em;
+  border-style: dashed;
+  border-color: transparent;
+  background: transparent;
+}
+
+.editor .wurd-textbox--plain:hover {
+  border-color: var(--border);
+}
+
+/* Out of the flow, a free box at the top mustn't push the first paragraph down */
+.editor > .wurd-textbox--float:first-child + * {
+  margin-top: 0;
+}
+
+.editor .wurd-textbox.is-dragging {
+  opacity: 0.7;
+}
+
+/* Handles over the text box the caret is in */
+.box-tools {
+  position: absolute;
+  z-index: 5;
+  outline: 1px dashed var(--focus-ring);
+  outline-offset: 3px;
+  pointer-events: none;
+}
+
+.box-tools__bar {
+  position: absolute;
+  bottom: 100%;
+  left: -4px;
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--header-bg);
+  color: var(--app-fg);
+  box-shadow: 0 4px 12px -2px rgb(0 0 0 / 0.2);
+  pointer-events: auto;
+}
+
+.box-tools__btn {
+  display: flex;
+  align-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.box-tools__btn:hover {
+  background: var(--tool-hover);
+}
+
+.box-tools__move {
+  cursor: grab;
+  touch-action: none;
+}
+
+.box-tools__move:active {
+  cursor: grabbing;
+}
+
+.box-tools__float[aria-pressed="true"] {
+  background: var(--pressed-bg);
+  color: var(--pressed-fg);
+  box-shadow: inset 0 0 0 1px var(--pressed-border);
+}
+
+.box-tools__resize {
+  position: absolute;
+  right: -12px;
+  bottom: -12px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--focus-ring);
+  border-radius: 3px;
+  background: var(--page-bg);
+  cursor: nwse-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Where an in-line box will go when it's let go */
+.box-drop {
+  position: absolute;
+  z-index: 5;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--focus-ring);
+  pointer-events: none;
+}
+
+.editor .wurd-textbox > :last-child {
+  margin-bottom: 0;
+}
+
+/* Page breaks: a labelled dashed line (the page itself scrolls on as one) */
+.editor hr.wurd-page-break {
+  position: relative;
+  height: 0;
+  margin-top: 2.5em;
+  margin-bottom: 2.5em;
+  overflow: visible;
+  border-top: 1px dashed var(--muted);
+}
+
+.editor hr.wurd-page-break::after {
+  content: "Page break";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  padding: 0 8px;
+  transform: translate(-50%, -50%);
+  background: var(--page-bg);
+  color: var(--muted);
+  font: 600 11px/16px Inter, sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Bold text keeps a colour chosen for it */
+.editor [style*="color"] :is(strong, b),
+.editor font[color] :is(strong, b) {
+  color: inherit;
+}
+
+/* Highlights are light colours; on the dark page their text would be unreadable */
+:root[data-theme="dark"] .editor [style*="background-color"],
+:root[data-theme="dark"] .editor mark {
+  color: #18181b;
 }
 
 .editor code,
@@ -1345,7 +1625,7 @@ img {
   .header-btn__label { display: inline; }
   .findbar__field input { width: 144px; }
   .canvas { padding: 32px; }
-  .editor { padding: 56px; }
+  .editor { padding: clamp(32px, var(--page-margin), 1in); }
 }
 
 @media (min-width: 768px) {
@@ -1532,6 +1812,48 @@ img {
 
 .btn--secondary:hover {
   background: var(--header-btn-hover);
+}
+
+.dialog__action-start {
+  margin-right: auto;
+}
+
+.symbols {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.symbols__heading {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.symbols__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 4px;
+}
+
+.symbol {
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--field-bg);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.symbol:hover {
+  border-color: var(--pressed-border);
+  background: var(--pressed-bg);
+  color: var(--pressed-fg);
 }
 
 .shortcuts {

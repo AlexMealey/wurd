@@ -26,6 +26,10 @@
     { id: 'justifyFull', label: 'Justify', group: 'Paragraph', scope: 'editor', keys: ['Mod+Shift+KeyJ'] },
     { id: 'insertOrderedList', label: 'Numbered list', group: 'Paragraph', scope: 'editor', keys: ['Mod+Shift+Digit7'] },
     { id: 'insertUnorderedList', label: 'Bulleted list', group: 'Paragraph', scope: 'editor', keys: ['Mod+Shift+Digit8'] },
+    { id: 'indent', label: 'Increase indent', group: 'Paragraph', scope: 'editor', keys: ['Mod+BracketRight'] },
+    { id: 'outdent', label: 'Decrease indent', group: 'Paragraph', scope: 'editor', keys: ['Mod+BracketLeft'] },
+    { id: 'link', label: 'Insert or edit link', group: 'Insert', scope: 'editor', keys: ['Mod+KeyK'] },
+    { id: 'pageBreak', label: 'Page break', group: 'Insert', scope: 'editor', keys: ['Mod+Enter'] },
     // Browsers reserve Ctrl+N for a new window, so New uses Ctrl+Alt+N
     { id: 'new', label: 'New document', group: 'File', scope: 'app', keys: ['Mod+Alt+KeyN'] },
     { id: 'open', label: 'Open', group: 'File', scope: 'app', keys: ['Mod+KeyO'] },
@@ -49,7 +53,7 @@
     };
   };
 
-  const KEY_NAMES = { Slash: '/', Comma: ',', Escape: 'Esc' };
+  const KEY_NAMES = { Slash: '/', Comma: ',', Escape: 'Esc', BracketLeft: '[', BracketRight: ']' };
   const keyName = (code) => KEY_NAMES[code] || code.replace(/^Key|^Digit/, '');
 
   // Human label: "Ctrl+Shift+Z" on Windows/Linux, "⇧⌘Z" on macOS

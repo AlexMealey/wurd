@@ -33,15 +33,21 @@
 
   // ---- Import: styles -------------------------------------------------------
 
+  const DIRECT_PROPS = ['color', 'bg', 'size', 'indent', 'breakBefore', 'breakAfter'];
+
   const buildStyleIndex = (contentDoc, stylesDoc) => {
     const families = new Map();
     const listStyles = new Map();
     const defaults = new Map();
     const fontFaces = new Map();
+    // Automatic styles are direct formatting; only they carry colours, sizes, indents and page breaks
+    // through (a named style's are its design, like a heading's size)
+    const automatic = new Set();
     const officeChild = (doc, name) => doc && findChild(doc.documentElement, 'office', name);
 
-    const collect = (container) => {
+    const collect = (container, isAutomatic = false) => {
       for (const el of elementsOf(container)) {
+        if (isAutomatic) automatic.add(el);
         if (is(el, 'style', 'style')) {
           const family = at(el, 'style', 'family');
           if (!families.has(family)) families.set(family, new Map());
@@ -55,9 +61,9 @@
       }
     };
     // Lookup order: the document's automatic styles, then named styles, then styles.xml's automatic styles
-    collect(officeChild(contentDoc, 'automatic-styles'));
+    collect(officeChild(contentDoc, 'automatic-styles'), true);
     collect(officeChild(stylesDoc, 'styles'));
-    collect(officeChild(stylesDoc, 'automatic-styles'));
+    collect(officeChild(stylesDoc, 'automatic-styles'), true);
     for (const doc of [contentDoc, stylesDoc]) {
       for (const face of elementsOf(officeChild(doc, 'font-face-decls'))) {
         if (!is(face, 'style', 'font-face')) continue;
@@ -90,12 +96,39 @@
         } else if (fontName || fontFamily) {
           props.font = Wurd.classifyFont(unquote(fontFamily || fontName));
         }
+        // Black counts as automatic, so it still shows on the dark theme's page; '' overrides a parent's colour
+        const color = at(tp, 'fo', 'color');
+        if (color) props.color = /^#[0-9a-f]{6}$/i.test(color) && color !== '#000000' ? color.slice(1).toUpperCase() : '';
+        const background = at(tp, 'fo', 'background-color');
+        if (background) props.bg = /^#[0-9a-f]{6}$/i.test(background) ? background.slice(1).toUpperCase() : '';
+        const size = Wurd.cssLengthToPt(at(tp, 'fo', 'font-size'));
+        if (size > 0) props.size = Math.round(size * 2) / 2;
       }
       const pp = findChild(el, 'style', 'paragraph-properties');
       const align = pp && at(pp, 'fo', 'text-align');
       if (align) props.align = { center: 'center', end: 'right', right: 'right', justify: 'justify' }[align] || '';
+      const margin = pp && (at(pp, 'fo', 'margin-left') || at(pp, 'fo', 'margin-start'));
+      if (margin) {
+        const indent = Wurd.cssLengthToPt(margin);
+        if (Number.isFinite(indent)) props.indent = indent >= 1 ? Math.round(indent) : 0;
+      }
+      const breakBefore = pp && at(pp, 'fo', 'break-before');
+      if (breakBefore) props.breakBefore = breakBefore === 'page';
+      const breakAfter = pp && at(pp, 'fo', 'break-after');
+      if (breakAfter) props.breakAfter = breakAfter === 'page';
       const listStyle = at(el, 'style', 'list-style-name');
       if (listStyle) props.listStyle = listStyle;
+      // For text boxes: where a frame is measured from, and a box table's width and row height
+      const gp = findChild(el, 'style', 'graphic-properties');
+      if (gp && at(gp, 'style', 'horizontal-rel')) props.hRel = at(gp, 'style', 'horizontal-rel');
+      if (gp && at(gp, 'draw', 'stroke')) props.stroke = at(gp, 'draw', 'stroke');
+      const tableProps = findChild(el, 'style', 'table-properties');
+      if (tableProps) {
+        props.tableWidth = at(tableProps, 'style', 'width');
+        props.tableAlign = at(tableProps, 'table', 'align');
+      }
+      const rowProps = findChild(el, 'style', 'table-row-properties');
+      if (rowProps) props.minRowHeight = at(rowProps, 'style', 'min-row-height');
       return props;
     };
 
@@ -111,7 +144,9 @@
         if (name && !el) props = { ...resolve(family, null, depth + 1), chain: [name] };
       } else {
         const parent = resolve(family, at(el, 'style', 'parent-style-name'), depth + 1);
-        props = { ...parent, ...ownProps(el), chain: [name, ...parent.chain] };
+        const own = ownProps(el);
+        if (!automatic.has(el)) DIRECT_PROPS.forEach((k) => delete own[k]);
+        props = { ...parent, ...own, chain: [name, ...parent.chain] };
       }
       cache.set(key, props);
       return props;
@@ -131,7 +166,8 @@
     };
 
     const standard = resolve('paragraph', 'Standard');
-    const pageFont = standard.font || resolve('paragraph', null).font || Wurd.DEFAULT_FONT;
+    // Drawings keep their font on the default graphic style
+    const pageFont = standard.font || resolve('paragraph', null).font || resolve('graphic', null).font || Wurd.DEFAULT_FONT;
     return { resolve, listKind, pageFont };
   };
 
@@ -181,6 +217,31 @@
     return images;
   };
 
+  const pt = (value) => {
+    const n = Wurd.cssLengthToPt(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // A text box frame's size and place. Frames anchored to a paragraph (or character) with a position
+  // are free boxes; the rest sit in line with the text.
+  const frameBox = (frame, textBox, ctx) => {
+    const page = ctx.page;
+    const widthPt = pt(at(frame, 'svg', 'width'));
+    const minHeightPt = pt(at(textBox, 'fo', 'min-height') || at(frame, 'fo', 'min-height') || at(frame, 'svg', 'height'));
+    const anchor = at(frame, 'text', 'anchor-type');
+    const positioned = at(frame, 'svg', 'x') || at(frame, 'svg', 'y');
+    if (!positioned || !/^(paragraph|char)$/.test(anchor || '')) return { widthPct: (widthPt / page.textWidthPt) * 100, minHeightPt };
+    const graphic = ctx.styles.resolve('graphic', at(frame, 'draw', 'style-name'));
+    const fromPage = /^page/.test(graphic.hRel || '');
+    return {
+      floating: true,
+      leftPct: (((fromPage ? 0 : page.marginLeftPt) + pt(at(frame, 'svg', 'x'))) / page.widthPt) * 100,
+      topPt: pt(at(frame, 'svg', 'y')),
+      widthPct: (widthPt / page.widthPt) * 100,
+      minHeightPt,
+    };
+  };
+
   // Text nodes collapse whitespace (ODF 1.2 part 1, 6.1.2); text:s and text:tab carry real spaces
   const collectRuns = (node, props, ctx, runs, href) => {
     for (const child of node.childNodes) {
@@ -207,7 +268,7 @@
             runs.push({ img: { src: ctx.images.get(item), width: lengthToPx(at(child, 'svg', 'width')), height: lengthToPx(at(child, 'svg', 'height')) }, href });
             break;
           }
-          if (is(item, 'draw', 'text-box')) ctx.pending.push(...elementsOf(item));
+          if (is(item, 'draw', 'text-box')) ctx.pending.push({ nodes: elementsOf(item), box: frameBox(child, item, ctx) });
           if (is(item, 'draw', 'frame')) collectRuns(child, props, ctx, runs, href);
         }
       } else if (/^(note|bookmark|bookmark-start|bookmark-end|bookmark-ref|reference-mark|reference-mark-start|reference-mark-end|toc-mark|toc-mark-start|toc-mark-end|alphabetical-index-mark|alphabetical-index-mark-start|alphabetical-index-mark-end|user-index-mark|user-index-mark-start|user-index-mark-end|soft-page-break|change|change-start|change-end|number|hidden-text|ruby-text)$/.test(child.localName) && child.namespaceURI === NS.text) {
@@ -226,7 +287,7 @@
   // Only the character formatting a run can carry
   const strip = (p) => {
     const out = {};
-    for (const k of ['b', 'i', 'u', 's', 'font']) if (p[k] !== undefined) out[k] = p[k];
+    for (const k of ['b', 'i', 'u', 's', 'font', 'color', 'bg', 'size']) if (p[k] !== undefined) out[k] = p[k];
     return out;
   };
 
@@ -260,7 +321,10 @@
     return runs.filter((run) => run.br || run.img || run.text);
   };
 
-  const sameFormat = (a, b) => a.href === b.href && ['b', 'i', 'u', 's', 'font', 'code'].every((k) => Boolean(a.props?.[k]) === Boolean(b.props?.[k]) && (k !== 'font' || a.props?.font === b.props?.font));
+  const VALUE_PROPS = ['font', 'color', 'bg', 'size'];
+  const sameFormat = (a, b) => a.href === b.href
+    && ['b', 'i', 'u', 's', 'code'].every((k) => Boolean(a.props?.[k]) === Boolean(b.props?.[k]))
+    && VALUE_PROPS.every((k) => (a.props?.[k] || '') === (b.props?.[k] || ''));
 
   // Writes runs into an HTML element, wrapping a > font > strong > em > u > s > code
   const emitRuns = (runs, target, base, ctx) => {
@@ -298,6 +362,8 @@
         if (p.b && !base.b) wrap('strong');
         // Code is already monospace, so it doesn't also need a font
         if (p.font && !p.code && p.font !== ctx.pageFont && p.font !== base.font) wrap('font', { face: p.font });
+        const css = [p.color && `color: #${p.color}`, p.bg && `background-color: #${p.bg}`, p.size && `font-size: ${p.size}pt`].filter(Boolean).join('; ');
+        if (css) wrap('span', { style: css });
       }
       if (run.href) {
         if (run.href !== linkHref) {
@@ -315,21 +381,50 @@
   };
 
   // Formatting a paragraph style applies to all its text becomes the block's own (bold headings aren't <strong>)
-  const paragraphInto = (el, block, ctx, { heading = false } = {}) => {
+  const paragraphInto = (el, block, ctx, { heading = false, inList = false } = {}) => {
     const props = ctx.styles.resolve('paragraph', at(el, 'text', 'style-name'));
     const runs = [];
     collectRuns(el, strip(props), ctx, runs, null);
     const base = heading ? { b: true } : {};
     emitRuns(normalizeOdfRuns(runs), block, base, ctx);
-    if (props.align) block.setAttribute('style', `text-align: ${props.align}`);
+    // A list's indent comes from its nesting, not from its paragraphs' margins
+    const css = [props.align && `text-align: ${props.align}`, !inList && props.indent && `margin-left: ${props.indent}pt`].filter(Boolean).join('; ');
+    if (css) block.setAttribute('style', css);
     if (!block.hasChildNodes()) block.append(document.createElement('br'));
     return props;
   };
 
+  // Text boxes anchored in the paragraph just converted go after it, each as a Wurd text box
+  // (one inside another box just adds its contents, as boxes don't nest)
+  // Free boxes go before the paragraph they're anchored in, which goes if it held nothing else
   const flushPending = (ctx, parent) => {
     if (!ctx.pending.length) return;
-    const pending = ctx.pending.splice(0);
-    convertBlocks(pending, parent, ctx);
+    const anchor = parent.lastElementChild;
+    let floated = false;
+    for (const { nodes, box: geometry } of ctx.pending.splice(0)) {
+      if (Wurd.isTextBox(parent) || parent.closest?.('.wurd-textbox')) {
+        convertBlocks(nodes, parent, ctx);
+        continue;
+      }
+      const box = document.createElement('div');
+      box.className = 'wurd-textbox';
+      convertBlocks(nodes, box, ctx);
+      if (!box.hasChildNodes()) continue;
+      Wurd.setBoxGeometry(box, geometry);
+      if (geometry?.floating && anchor && !Wurd.isTextBox(anchor)) {
+        anchor.before(box);
+        floated = true;
+      } else {
+        parent.append(box);
+      }
+    }
+    if (floated && !anchor.textContent.trim() && !anchor.querySelector('img, hr, table, .wurd-textbox')) anchor.remove();
+  };
+
+  const pageBreak = () => {
+    const hr = document.createElement('hr');
+    hr.className = 'wurd-page-break';
+    return hr;
   };
 
   const MAX_TABLE_ROWS = 1000;
@@ -402,11 +497,11 @@
           li.append(convertList(child, ctx, level + 1, styleName));
         } else if (is(child, 'text', 'p') || is(child, 'text', 'h')) {
           if (paragraphs.length === 1) {
-            paragraphInto(child, li, ctx);
+            paragraphInto(child, li, ctx, { inList: true });
             if (li.childNodes.length === 1 && li.firstChild.nodeName === 'BR' && elementsOf(item).length > 1) li.firstChild.remove();
           } else {
             const p = document.createElement('p');
-            paragraphInto(child, p, ctx);
+            paragraphInto(child, p, ctx, { inList: true });
             li.append(p);
           }
         } else if (!is(child, 'text', 'number')) {
@@ -425,6 +520,16 @@
       if (is(el, 'text', 'p') || is(el, 'text', 'h')) {
         const props = ctx.styles.resolve('paragraph', at(el, 'text', 'style-name'));
         const kind = is(el, 'text', 'h') ? 'heading' : semantic(props);
+        // Page breaks are kept between top-level blocks; a paragraph that's only there to carry one
+        // (as Wurd writes them) becomes just the break
+        const breaks = parent === ctx.root && kind !== 'pre';
+        if (breaks && props.breakBefore) parent.append(pageBreak());
+        if (breaks && (props.breakBefore || props.breakAfter) && !el.textContent.trim() && !el.getElementsByTagNameNS(NS.draw, 'frame').length) {
+          if (props.breakAfter) parent.append(pageBreak());
+          pre = null;
+          quote = null;
+          continue;
+        }
         if (kind === 'pre') {
           // Consecutive preformatted paragraphs become one <pre>
           if (!pre) {
@@ -468,6 +573,10 @@
           }
         }
         flushPending(ctx, parent);
+        if (breaks && props.breakAfter) {
+          parent.append(pageBreak());
+          quote = null;
+        }
         continue;
       }
       pre = null;
@@ -475,7 +584,24 @@
       if (is(el, 'text', 'list')) {
         parent.append(convertList(el, ctx, 1, null));
       } else if (is(el, 'table', 'table')) {
-        parent.append(convertTable(el, ctx));
+        // Wurd writes text boxes as one-cell tables named WurdTextBox<n>
+        const cells = el.getElementsByTagNameNS(NS.table, 'table-cell');
+        if (/^WurdTextBox/.test(at(el, 'table', 'name') || '') && cells.length === 1 && !(Wurd.isTextBox(parent) || parent.closest?.('.wurd-textbox'))) {
+          const box = document.createElement('div');
+          box.className = 'wurd-textbox';
+          convertBlocks(elementsOf(cells[0]), box, ctx);
+          if (!box.hasChildNodes()) box.append(document.createElement('p'));
+          const tableStyle = ctx.styles.resolve('table', at(el, 'table', 'style-name'));
+          const row = el.getElementsByTagNameNS(NS.table, 'table-row')[0];
+          const rowStyle = row ? ctx.styles.resolve('table-row', at(row, 'table', 'style-name')) : {};
+          Wurd.setBoxGeometry(box, {
+            widthPct: tableStyle.tableAlign !== 'margins' ? (pt(tableStyle.tableWidth) / ctx.page.textWidthPt) * 100 : NaN,
+            minHeightPt: pt(rowStyle.minRowHeight),
+          });
+          parent.append(box);
+        } else {
+          parent.append(convertTable(el, ctx));
+        }
       } else if (is(el, 'text', 'section') || is(el, 'text', 'index-body') || is(el, 'text', 'index-title')) {
         convertBlocks(elementsOf(el), parent, ctx);
       } else if (el.namespaceURI === NS.text && /(^|-)index$|^table-of-content$|^bibliography$/.test(el.localName)) {
@@ -486,6 +612,18 @@
     }
   }
 
+  // The page's width and left margin, in points, from the first page layout (A4 with 2cm margins if none)
+  const pageGeometry = (stylesDoc) => {
+    const props = stylesDoc?.getElementsByTagNameNS(NS.style, 'page-layout-properties')[0];
+    const read = (name, fallback) => {
+      const n = Wurd.cssLengthToPt(props && at(props, 'fo', name));
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    const widthPt = read('page-width', 595.3);
+    const marginLeftPt = read('margin-left', 56.7);
+    return { widthPt, heightPt: read('page-height', 841.9), marginLeftPt, textWidthPt: widthPt - marginLeftPt - read('margin-right', 56.7) };
+  };
+
   const importOdt = async (bytes, { askPassword } = {}) => {
     const pkg = await F.odfPackage.read(bytes, { askPassword });
     const contentXml = await pkg.readText('content.xml');
@@ -494,10 +632,11 @@
     const contentDoc = parseXml(contentXml);
     const stylesDoc = stylesXml ? parseXml(stylesXml) : null;
     const styles = buildStyleIndex(contentDoc, stylesDoc);
-    const ctx = { styles, pageFont: styles.pageFont, images: await loadImages(contentDoc, pkg), pending: [] };
+    const ctx = { styles, pageFont: styles.pageFont, page: pageGeometry(stylesDoc), images: await loadImages(contentDoc, pkg), pending: [] };
     const body = contentDoc.getElementsByTagNameNS(NS.office, 'text')[0];
     if (!body) throw new Wurd.UserError("This OpenDocument file isn't a text document.");
     const container = document.createElement('div');
+    ctx.root = container;
     convertBlocks(elementsOf(body), container, ctx);
     flushPending(ctx, container);
     return { html: container.innerHTML || '<p><br></p>', font: styles.pageFont, password: pkg.password };
@@ -530,14 +669,17 @@
 
   const bold = 'fo:font-weight="bold" style:font-weight-asian="bold" style:font-weight-complex="bold"';
 
-  const stylesXml = (pageFont) => {
-    const face = faceFor(pageFont);
+  // Page size from Settings (A4 or Letter) with 2cm margins
+  const MARGIN_CM = 2;
+  const pageFor = (size) => {
+    const page = Wurd.PAGE_SIZES[size] || Wurd.PAGE_SIZES.a4;
+    return { width: page.widthCm, height: page.heightCm, textWidthCm: parseFloat(page.widthCm) - 2 * MARGIN_CM };
+  };
+
+  // The named styles .odt and .odg files both carry
+  const namedStylesXml = (face) => {
     const heading = (n, size) => `<style:style style:name="Heading_20_${n}" style:display-name="Heading ${n}" style:family="paragraph" style:parent-style-name="Heading" style:next-style-name="Text_20_body" style:default-outline-level="${n}" style:class="text"><style:text-properties fo:font-size="${size}pt" ${bold}/></style:style>`;
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<office:document-styles ${NAMESPACES} office:version="${F.odfPackage.ODF_VERSION}">
-${fontFaceDecls()}
-<office:styles>
-<style:default-style style:family="paragraph"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="${face.name}" fo:font-size="12pt" fo:language="en" fo:country="GB"/></style:default-style>
+    return `<style:default-style style:family="paragraph"><style:paragraph-properties style:tab-stop-distance="1.25cm"/><style:text-properties style:font-name="${face.name}" fo:font-size="12pt" fo:language="en" fo:country="GB"/></style:default-style>
 <style:style style:name="Standard" style:family="paragraph" style:class="text"/>
 <style:style style:name="Heading" style:family="paragraph" style:parent-style-name="Standard" style:next-style-name="Text_20_body" style:class="text"><style:paragraph-properties fo:margin-top="0.423cm" fo:margin-bottom="0.212cm" fo:keep-with-next="always"/></style:style>
 ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
@@ -551,10 +693,33 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
 <style:style style:name="Internet_20_link" style:display-name="Internet link" style:family="text"><style:text-properties fo:color="#000080" style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"/></style:style>
 <text:outline-style style:name="Outline">${Array.from({ length: 10 }, (_, i) => `<text:outline-level-style text:level="${i + 1}" style:num-format=""/>`).join('')}</text:outline-style>
 <text:list-style style:name="Wurd_20_Bullets" style:display-name="Wurd Bullets">${listLevels('bullet')}</text:list-style>
-<text:list-style style:name="Wurd_20_Numbers" style:display-name="Wurd Numbers">${listLevels('number')}</text:list-style>
+<text:list-style style:name="Wurd_20_Numbers" style:display-name="Wurd Numbers">${listLevels('number')}</text:list-style>`;
+  };
+
+  const stylesXml = (pageFont, page) => `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles ${NAMESPACES} office:version="${F.odfPackage.ODF_VERSION}">
+${fontFaceDecls()}
+<office:styles>
+${namedStylesXml(faceFor(pageFont))}
 </office:styles>
-<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21.001cm" fo:page-height="29.7cm" style:print-orientation="portrait" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm" style:writing-mode="lr-tb"/></style:page-layout></office:automatic-styles>
+<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="${page.width}" fo:page-height="${page.height}" style:print-orientation="portrait" fo:margin-top="${MARGIN_CM}cm" fo:margin-bottom="${MARGIN_CM}cm" fo:margin-left="${MARGIN_CM}cm" fo:margin-right="${MARGIN_CM}cm" style:writing-mode="lr-tb"/></style:page-layout></office:automatic-styles>
 <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"/></office:master-styles>
+</office:document-styles>
+`;
+
+  // A drawing's pages have no margins: every frame is placed from the paper's top-left corner.
+  // Text in frames takes its font from the default graphic style.
+  const drawingStylesXml = (pageFont, page) => {
+    const face = faceFor(pageFont);
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles ${NAMESPACES} office:version="${F.odfPackage.ODF_VERSION}">
+${fontFaceDecls()}
+<office:styles>
+<style:default-style style:family="graphic"><style:graphic-properties svg:stroke-color="#808080" draw:fill-color="#ffffff"/><style:text-properties style:font-name="${face.name}" fo:font-size="12pt" fo:language="en" fo:country="GB"/></style:default-style>
+${namedStylesXml(face)}
+</office:styles>
+<office:automatic-styles><style:page-layout style:name="PM1"><style:page-layout-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:margin-left="0cm" fo:margin-right="0cm" fo:page-width="${page.width}" fo:page-height="${page.height}" style:print-orientation="portrait"/></style:page-layout><style:style style:name="Mdp1" style:family="drawing-page"><style:drawing-page-properties draw:fill="none"/></style:style></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Default" style:page-layout-name="PM1" draw:style-name="Mdp1"/></office:master-styles>
 </office:document-styles>
 `;
   };
@@ -567,15 +732,16 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
   };
 
   const BLOCK = /^(P|DIV|H[1-6]|UL|OL|LI|BLOCKQUOTE|PRE|HR|TABLE|SECTION|ARTICLE|HEADER|FOOTER|FIGURE|FIGCAPTION|ADDRESS|DL|DT|DD)$/;
-  const TEXT_WIDTH_CM = 17;
+  const FONT_SIZES_PT = [8, 10, 12, 14, 18, 24, 36]; // <font size="1..7">
   const ODF_ALIGN = { left: 'start', start: 'start', right: 'end', end: 'end', center: 'center', justify: 'justify' };
 
   // Automatic styles, numbered in first-use order so the output is deterministic
   const textStyle = (ctx, f) => {
     const font = f.code ? FONT_FACES[Wurd.MONO_FONT].name : f.font && f.font !== ctx.pageFace ? f.font : null;
-    if (!f.b && !f.i && !f.u && !f.s && !font) return null;
-    if (!f.b && !f.i && !f.u && !f.s && f.code && !f.font) return 'Source_20_Text';
-    const key = `${+!!f.b}${+!!f.i}${+!!f.u}${+!!f.s}|${font || ''}`;
+    const plain = !f.b && !f.i && !f.u && !f.s && !f.color && !f.bg && !f.size;
+    if (plain && !font) return null;
+    if (plain && f.code && !f.font) return 'Source_20_Text';
+    const key = `${+!!f.b}${+!!f.i}${+!!f.u}${+!!f.s}|${font || ''}|${f.color || ''}|${f.bg || ''}|${f.size || ''}`;
     if (!ctx.textStyles.has(key)) {
       const props = [
         f.b && bold,
@@ -583,20 +749,46 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
         f.u && 'style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"',
         f.s && 'style:text-line-through-style="solid" style:text-line-through-type="single"',
         font && `style:font-name="${font}"`,
+        f.color && `fo:color="#${f.color}"`,
+        f.bg && `fo:background-color="#${f.bg}"`,
+        f.size && `fo:font-size="${f.size}pt" style:font-size-asian="${f.size}pt" style:font-size-complex="${f.size}pt"`,
       ].filter(Boolean).join(' ');
       ctx.textStyles.set(key, { name: `T${ctx.textStyles.size + 1}`, xml: props });
     }
     return ctx.textStyles.get(key).name;
   };
 
-  const paragraphStyle = (ctx, parent, align) => {
-    const odfAlign = ODF_ALIGN[align];
-    if (!odfAlign || odfAlign === 'start') return parent;
-    const key = `${parent}|${odfAlign}`;
+  // In a drawing, LibreOffice Draw may not apply a text document's named paragraph styles, so each
+  // automatic style also spells out how its named style looks
+  const HEADING_LOOK = (size) => ({ para: { 'fo:margin-top': '0.423cm', 'fo:margin-bottom': '0.212cm' }, text: `fo:font-size="${size}pt" ${bold}` });
+  const DRAWING_LOOK = {
+    Text_20_body: { para: { 'fo:margin-top': '0cm', 'fo:margin-bottom': '0.247cm' } },
+    Heading_20_1: HEADING_LOOK(27),
+    Heading_20_2: HEADING_LOOK(18),
+    Heading_20_3: HEADING_LOOK(15),
+    Heading_20_4: HEADING_LOOK(12),
+    Quotations: { para: { 'fo:margin-left': '1cm', 'fo:margin-right': '1cm', 'fo:margin-top': '0cm', 'fo:margin-bottom': '0.283cm' } },
+    Table_20_Heading: { para: {}, text: bold },
+  };
+
+  // An automatic paragraph style for alignment, a left indent (points) and a page break after
+  const paragraphStyle = (ctx, parent, align, { indentPt = 0, breakAfter = false } = {}) => {
+    const odfAlign = ODF_ALIGN[align] === 'start' ? null : ODF_ALIGN[align];
+    const indent = Math.round(indentPt * 100) / 100;
+    const look = ctx.drawing ? DRAWING_LOOK[parent] : null;
+    if (!odfAlign && !indent && !breakAfter && !look) return parent;
+    const key = `${parent}|${odfAlign || ''}|${indent}|${+breakAfter}`;
     if (!ctx.paragraphStyles.has(key)) {
+      const name = `P${ctx.paragraphStyles.size + 1}`;
+      const props = { ...(look?.para || {}) };
+      if (odfAlign) props['fo:text-align'] = odfAlign;
+      if (odfAlign === 'justify') props['style:justify-single-word'] = 'false';
+      if (indent) props['fo:margin-left'] = `${indent}pt`;
+      if (breakAfter) props['fo:break-after'] = 'page';
+      const attributes = Object.entries(props).map(([k, v]) => `${k}="${v}"`).join(' ');
       ctx.paragraphStyles.set(key, {
-        name: `P${ctx.paragraphStyles.size + 1}`,
-        xml: `<style:style style:name="P${ctx.paragraphStyles.size + 1}" style:family="paragraph" style:parent-style-name="${parent}"><style:paragraph-properties fo:text-align="${odfAlign}"${odfAlign === 'justify' ? ' style:justify-single-word="false"' : ''}/></style:style>`,
+        name,
+        xml: `<style:style style:name="${name}" style:family="paragraph" style:parent-style-name="${parent}"><style:paragraph-properties ${attributes}/>${look?.text ? `<style:text-properties ${look.text}/>` : ''}</style:style>`,
       });
     }
     return ctx.paragraphStyles.get(key).name;
@@ -629,8 +821,13 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
       else if (tag === 'U' || tag === 'INS') next.u = true;
       else if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') next.s = true;
       else if (tag === 'CODE' || tag === 'KBD' || tag === 'TT' || tag === 'SAMP') next.code = true;
-      else if (tag === 'FONT' && node.getAttribute('face')) next.font = faceFor(node.getAttribute('face')).name;
-      else if (tag === 'A' && /^(https?:|mailto:|tel:|#)/i.test(node.getAttribute('href') || '')) link = node.getAttribute('href');
+      else if (tag === 'MARK') next.bg = Wurd.HIGHLIGHTS.yellow;
+      else if (tag === 'FONT') {
+        if (node.getAttribute('face')) next.font = faceFor(node.getAttribute('face')).name;
+        if (node.getAttribute('color')) next.color = Wurd.colorToHex(node.getAttribute('color')) || next.color;
+        const size = Number(node.getAttribute('size'));
+        if (size >= 1 && size <= 7) next.size = FONT_SIZES_PT[size - 1];
+      } else if (tag === 'A' && /^(https?:|mailto:|tel:|#)/i.test(node.getAttribute('href') || '')) link = node.getAttribute('href');
       const style = node.style;
       if (style) {
         if (style.fontWeight === 'bold' || Number(style.fontWeight) >= 600) next.b = true;
@@ -638,6 +835,10 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
         if (/underline/.test(style.textDecorationLine || style.textDecoration || '')) next.u = true;
         if (/line-through/.test(style.textDecorationLine || style.textDecoration || '')) next.s = true;
         if (style.fontFamily) next.font = faceFor(style.fontFamily).name;
+        if (style.color) next.color = Wurd.colorToHex(style.color) || next.color;
+        if (style.backgroundColor) next.bg = Wurd.colorToHex(style.backgroundColor) || next.bg;
+        const size = Wurd.cssLengthToPt(style.fontSize);
+        if (size > 0 && /(pt|px)$/.test(style.fontSize)) next.size = Math.round(size * 2) / 2;
       }
       if (BLOCK.test(tag) && runs.length) runs.push({ br: true });
       inlineRuns(node.childNodes, ctx, next, link, runs);
@@ -746,10 +947,10 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
   }).join('');
 
   const listXml = (list, ctx, state) => {
-    const style = list.tagName === 'OL' ? 'Wurd_20_Numbers' : 'Wurd_20_Bullets';
+    const style = ctx.drawing ? (list.tagName === 'OL' ? 'WurdL2' : 'WurdL1') : list.tagName === 'OL' ? 'Wurd_20_Numbers' : 'Wurd_20_Bullets';
     let xml = `<text:list text:style-name="${style}">`;
     let first = true;
-    const itemState = { ...state, parent: 'Standard', inList: true };
+    const itemState = { ...state, parent: 'Standard', inList: true, indentPt: 0 };
     for (const child of list.children) {
       if (child.tagName === 'UL' || child.tagName === 'OL') {
         xml += `<text:list-item>${listXml(child, ctx, itemState)}</text:list-item>`;
@@ -823,7 +1024,7 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
           for (let dc = 0; dc < colspan; dc++) if (dr || dc) occupied.add(`${r + dr},${col + dc}`);
         }
         const parent = cell.tagName === 'TH' ? 'Table_20_Heading' : 'Table_20_Contents';
-        const content = blocksXml(cell.childNodes, ctx, { ...state, parent, align: alignOf(cell), inList: false });
+        const content = blocksXml(cell.childNodes, ctx, { ...state, parent, align: alignOf(cell), inList: false, indentPt: 0 });
         const spans = `${colspan > 1 ? ` table:number-columns-spanned="${colspan}"` : ''}${rowspan > 1 ? ` table:number-rows-spanned="${rowspan}"` : ''}`;
         xml += `<table:table-cell table:style-name="Wcell" office:value-type="string"${spans}>${content || `<text:p text:style-name="${parent}"/>`}</table:table-cell>`;
         for (let dc = 1; dc < colspan; dc++) xml += '<table:covered-table-cell/>';
@@ -837,28 +1038,78 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
 
   const HEADING_LEVEL = { H1: 1, H2: 2, H3: 3, H4: 4, H5: 4, H6: 4 };
 
+  const percentOf = (value, fallback) => {
+    const pct = parseFloat(value);
+    return Number.isFinite(pct) && /%$/.test(value || '') ? Math.min(Math.max(pct, 1), 100) / 100 : fallback;
+  };
+  const cmOf = (cssLength) => {
+    const pt = Wurd.cssLengthToPt(cssLength);
+    return Number.isFinite(pt) ? (pt / 72) * 2.54 : 0;
+  };
+  const cm = (n) => `${n.toFixed(3)}cm`;
+
+  // A free text box is a frame in front of the text, anchored to a tiny paragraph where the box sits
+  // among the blocks: left from the page edge, top from that paragraph
+  const floatingBoxXml = (box, ctx, state) => {
+    const content = blocksXml(box.childNodes, ctx, { ...state, inList: false, indentPt: 0 });
+    if (state.inList) return content;
+    const n = ++ctx.boxCount;
+    ctx.floats = true;
+    const pageWidth = parseFloat(ctx.page.width);
+    const minHeight = Math.max(cmOf(box.style.minHeight), 0.5);
+    const plain = box.classList.contains('wurd-textbox--plain');
+    if (plain) ctx.plainFloats = true;
+    return `<text:p text:style-name="WurdAnchor"><draw:frame draw:style-name="${plain ? 'WurdFloatPlain' : 'WurdFloat'}" draw:name="WurdTextBox${n}" text:anchor-type="paragraph" svg:x="${cm(percentOf(box.style.left, 0) * pageWidth)}" svg:y="${cm(cmOf(box.style.marginTop))}" svg:width="${cm(percentOf(box.style.width, 0.4) * pageWidth)}" draw:z-index="${n}"><draw:text-box fo:min-height="${cm(minHeight)}">${content || '<text:p text:style-name="Standard"/>'}</draw:text-box></draw:frame></text:p>`;
+  };
+
+  // An in-line text box is a one-cell bordered table named WurdTextBox<n>, so it imports back as a
+  // text box. ODF tables can't sit inside list items, so there it's just its contents.
+  const textBoxXml = (box, ctx, state) => {
+    if (Wurd.isFloatingBox(box)) return floatingBoxXml(box, ctx, state);
+    const content = blocksXml(box.childNodes, ctx, { ...state, inList: false, indentPt: 0 });
+    if (state.inList) return content;
+    const n = ++ctx.boxCount;
+    const share = percentOf(box.style.width, 1);
+    const width = cm(ctx.page.textWidthCm * share);
+    const minHeight = cmOf(box.style.minHeight);
+    ctx.boxStyles.push(
+      `<style:style style:name="WurdBox${n}" style:family="table"><style:table-properties style:width="${width}" table:align="${share < 1 ? 'left' : 'margins'}" fo:margin-top="0.2cm" fo:margin-bottom="0.2cm"/></style:style>`,
+      `<style:style style:name="WurdBoxCol${n}" style:family="table-column"><style:table-column-properties style:column-width="${width}"/></style:style>`,
+      minHeight ? `<style:style style:name="WurdBoxRow${n}" style:family="table-row"><style:table-row-properties style:min-row-height="${cm(minHeight)}"/></style:style>` : '',
+    );
+    const row = minHeight ? ` table:style-name="WurdBoxRow${n}"` : '';
+    const cell = box.classList.contains('wurd-textbox--plain') ? 'WurdBoxCellPlain' : 'WurdBoxCell';
+    return `<table:table table:name="WurdTextBox${n}" table:style-name="WurdBox${n}"><table:table-column table:style-name="WurdBoxCol${n}"/><table:table-row${row}><table:table-cell table:style-name="${cell}" office:value-type="string">${content || '<text:p text:style-name="Standard"/>'}</table:table-cell></table:table-row></table:table>`;
+  };
+
   function blockXml(el, ctx, state) {
     const tag = el.tagName;
     const align = alignOf(el) || state.align;
+    const indentPt = (state.indentPt || 0) + Wurd.indentOf(el);
     if (HEADING_LEVEL[tag]) {
       const level = HEADING_LEVEL[tag];
       if (state.inList) return paragraphXml(Array.from(el.childNodes), ctx, paragraphStyle(ctx, state.parent, align), { keepEmpty: true, base: { b: true } });
-      return paragraphXml(Array.from(el.childNodes), ctx, paragraphStyle(ctx, `Heading_20_${level}`, align), { keepEmpty: true, heading: level });
+      return paragraphXml(Array.from(el.childNodes), ctx, paragraphStyle(ctx, `Heading_20_${level}`, align, { indentPt }), { keepEmpty: true, heading: level });
     }
     if (tag === 'UL' || tag === 'OL') return listXml(el, ctx, state);
     if (tag === 'BLOCKQUOTE') return blocksXml(el.childNodes, ctx, { ...state, parent: 'Quotations', align });
     if (tag === 'PRE') return preXml(el);
-    if (tag === 'HR') return '<text:p text:style-name="Horizontal_20_Line"/>';
+    if (tag === 'HR') {
+      // An empty paragraph with a page break after it
+      if (Wurd.isPageBreak(el)) return `<text:p text:style-name="${paragraphStyle(ctx, 'Standard', '', { breakAfter: true })}"/>`;
+      return '<text:p text:style-name="Horizontal_20_Line"/>';
+    }
     if (tag === 'TABLE') return tableXml(el, ctx, state);
-    if (Array.from(el.children).some((c) => BLOCK.test(c.tagName))) return blocksXml(el.childNodes, ctx, { ...state, align });
-    return paragraphXml(Array.from(el.childNodes), ctx, paragraphStyle(ctx, state.parent, align), { keepEmpty: tag === 'P' });
+    if (Wurd.isTextBox(el)) return textBoxXml(el, ctx, state);
+    if (Array.from(el.children).some((c) => BLOCK.test(c.tagName))) return blocksXml(el.childNodes, ctx, { ...state, align, indentPt });
+    return paragraphXml(Array.from(el.childNodes), ctx, paragraphStyle(ctx, state.parent, align, { indentPt: state.inList ? 0 : indentPt }), { keepEmpty: tag === 'P' });
   }
 
   function blocksXml(nodes, ctx, state) {
     let xml = '';
     let inline = [];
     const flush = () => {
-      if (inline.length) xml += paragraphXml(inline, ctx, paragraphStyle(ctx, state.parent, state.align));
+      if (inline.length) xml += paragraphXml(inline, ctx, paragraphStyle(ctx, state.parent, state.align, { indentPt: state.inList ? 0 : state.indentPt || 0 }));
       inline = [];
     };
     for (const node of nodes) {
@@ -874,7 +1125,7 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
   }
 
   // Embedded data: images become Pictures/ entries (sizes need decoding first)
-  const prepareImages = async (root) => {
+  const prepareImages = async (root, textWidthCm) => {
     const images = new Map();
     let n = 0;
     for (const img of root.querySelectorAll('img')) {
@@ -889,9 +1140,9 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
         if (!width || !height) continue;
         let widthCm = width * 0.026458;
         let heightCm = height * 0.026458;
-        if (widthCm > TEXT_WIDTH_CM) {
-          heightCm *= TEXT_WIDTH_CM / widthCm;
-          widthCm = TEXT_WIDTH_CM;
+        if (widthCm > textWidthCm) {
+          heightCm *= textWidthCm / widthCm;
+          widthCm = textWidthCm;
         }
         n++;
         const ext = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/gif': 'gif', 'image/bmp': 'bmp', 'image/webp': 'webp', 'image/svg+xml': 'svg' }[match[1].toLowerCase()];
@@ -910,35 +1161,229 @@ ${heading(1, 27)}${heading(2, 18)}${heading(3, 15)}${heading(4, 12)}
     return images;
   };
 
-  const exportOdt = async (root, { title, pageFont, password }) => {
-    const pageFace = faceFor(pageFont).name;
-    const ctx = { pageFace, textStyles: new Map(), paragraphStyles: new Map(), columnStyles: new Set(), tableCount: 0, images: await prepareImages(root) };
-    const body = blocksXml(root.childNodes, ctx, { parent: 'Text_20_body', align: '', inList: false });
-
-    const automatic = [
-      ...Array.from(ctx.textStyles.values(), (s) => `<style:style style:name="${s.name}" style:family="text"><style:text-properties ${s.xml}/></style:style>`),
-      ...Array.from(ctx.paragraphStyles.values(), (s) => s.xml),
-      ...Array.from({ length: ctx.tableCount }, (_, i) => `<style:style style:name="Tbl${i + 1}" style:family="table"><style:table-properties style:width="${TEXT_WIDTH_CM}cm" table:align="margins"/></style:style>`),
-      ...Array.from(ctx.columnStyles, (n) => `<style:style style:name="Wcol${n}" style:family="table-column"><style:table-column-properties style:column-width="${(TEXT_WIDTH_CM / n).toFixed(3)}cm"/></style:style>`),
-      ctx.tableCount ? '<style:style style:name="Wcell" style:family="table-cell"><style:table-cell-properties fo:padding="0.097cm" fo:border="0.5pt solid #000000"/></style:style>' : '',
-      ctx.images.size ? '<style:style style:name="fr1" style:family="graphic"><style:graphic-properties style:vertical-pos="top" style:vertical-rel="baseline"/></style:style>' : '',
-    ].join('');
-
+  const exportOdt = async (root, { title, pageFont, pageSize, password }) => {
+    const page = pageFor(pageSize);
+    const ctx = await newExportContext(root, pageFont, page);
+    const body = blocksXml(root.childNodes, ctx, { parent: 'Text_20_body', align: '', inList: false, indentPt: 0 });
     const content = `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content ${NAMESPACES} office:version="${F.odfPackage.ODF_VERSION}">
 ${fontFaceDecls()}
-<office:automatic-styles>${automatic}</office:automatic-styles>
+<office:automatic-styles>${automaticStylesXml(ctx)}</office:automatic-styles>
 <office:body><office:text>${body || '<text:p text:style-name="Standard"/>'}</office:text></office:body>
 </office:document-content>
 `;
     const parts = [
       { path: 'content.xml', data: content, mediaType: 'text/xml' },
-      { path: 'styles.xml', data: stylesXml(pageFont), mediaType: 'text/xml' },
+      { path: 'styles.xml', data: stylesXml(pageFont, page), mediaType: 'text/xml' },
       { path: 'meta.xml', data: metaXml(title), mediaType: 'text/xml' },
       ...Array.from(ctx.images.values(), (img) => ({ path: img.path, data: img.bytes, mediaType: img.mediaType })),
     ];
     return F.odfPackage.write(parts, { password });
   };
 
+  const newExportContext = async (root, pageFont, page) => ({
+    pageFace: faceFor(pageFont).name,
+    textStyles: new Map(),
+    paragraphStyles: new Map(),
+    columnStyles: new Set(),
+    tableCount: 0,
+    boxCount: 0,
+    boxStyles: [],
+    floats: false,
+    page,
+    images: await prepareImages(root, page.textWidthCm),
+  });
+
+  // The automatic styles the body used, for content.xml
+  const automaticStylesXml = (ctx) => {
+    const { page } = ctx;
+    const textWidth = page.textWidthCm.toFixed(3);
+    return [
+      ...Array.from(ctx.textStyles.values(), (s) => `<style:style style:name="${s.name}" style:family="text"><style:text-properties ${s.xml}/></style:style>`),
+      ...Array.from(ctx.paragraphStyles.values(), (s) => s.xml),
+      ...Array.from({ length: ctx.tableCount }, (_, i) => `<style:style style:name="Tbl${i + 1}" style:family="table"><style:table-properties style:width="${textWidth}cm" table:align="margins"/></style:style>`),
+      ...Array.from(ctx.columnStyles, (n) => `<style:style style:name="Wcol${n}" style:family="table-column"><style:table-column-properties style:column-width="${(page.textWidthCm / n).toFixed(3)}cm"/></style:style>`),
+      ...ctx.boxStyles,
+      ctx.boxStyles.length ? '<style:style style:name="WurdBoxCell" style:family="table-cell"><style:table-cell-properties fo:padding="0.2cm" fo:border="0.5pt solid #808080"/></style:style><style:style style:name="WurdBoxCellPlain" style:family="table-cell"><style:table-cell-properties fo:padding="0.1cm" fo:border="none"/></style:style>' : '',
+      ctx.floats ? '<style:style style:name="WurdAnchor" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="0.035cm"/><style:text-properties fo:font-size="1pt"/></style:style>' : '',
+      ctx.floats ? '<style:style style:name="WurdFloat" style:family="graphic"><style:graphic-properties style:wrap="run-through" style:run-through="foreground" style:vertical-pos="from-top" style:vertical-rel="paragraph" style:horizontal-pos="from-left" style:horizontal-rel="page" fo:padding="0.15cm" fo:border="0.5pt solid #808080" fo:background-color="#ffffff" draw:fill="solid" draw:fill-color="#ffffff"/></style:style>' : '',
+      ctx.plainFloats ? '<style:style style:name="WurdFloatPlain" style:family="graphic"><style:graphic-properties style:wrap="run-through" style:run-through="foreground" style:vertical-pos="from-top" style:vertical-rel="paragraph" style:horizontal-pos="from-left" style:horizontal-rel="page" fo:padding="0.1cm" fo:border="none" draw:fill="none"/></style:style>' : '',
+      ctx.tableCount ? '<style:style style:name="Wcell" style:family="table-cell"><style:table-cell-properties fo:padding="0.097cm" fo:border="0.5pt solid #000000"/></style:style>' : '',
+      ctx.images.size ? '<style:style style:name="fr1" style:family="graphic"><style:graphic-properties style:vertical-pos="top" style:vertical-rel="baseline"/></style:style>' : '',
+    ].join('');
+  };
+
+  // ---- OpenDocument drawing (.odg) --------------------------------------------
+  // A drawing is pages of positioned shapes. Opening one, each page becomes a Wurd page (pages are
+  // separated by page breaks) whose text frames, shapes with text, pictures and tables become free
+  // text boxes where they were. A page-high paragraph after them holds the page open. Saving, each
+  // Wurd page becomes a drawing page: its text in a frame inside the margins, each free box a frame.
+
+  const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
+  const ODG_TYPES = /^application\/vnd\.oasis\.opendocument\.graphics(-template)?$/;
+  // Wurd's page margin (1in): a drawing page's text frame sits inside it, and free boxes are measured from it
+  const DRAWING_MARGIN_PT = 72;
+  const SHAPES = /^(rect|ellipse|circle|custom-shape|polygon|polyline|path|regular-polygon|caption|measure|line|connector)$/;
+  const ptToCm = (n) => `${((n / 72) * 2.54).toFixed(3)}cm`;
+
+  // Position and size of a shape, from svg:x/y or, for transformed shapes, the transform's translate()
+  const shapeGeometry = (el) => {
+    let x = pt(at(el, 'svg', 'x'));
+    let y = pt(at(el, 'svg', 'y'));
+    const translate = /translate\(\s*([-\d.]+[a-z]*)[\s,]+([-\d.]+[a-z]*)\s*\)/i.exec(at(el, 'draw', 'transform') || '');
+    if (translate) {
+      x += pt(translate[1]);
+      y += pt(translate[2]);
+    }
+    return { x, y, w: pt(at(el, 'svg', 'width')), h: pt(at(el, 'svg', 'height')) };
+  };
+
+  // The things on a drawing page Wurd can keep, in drawing order (later ones are on top)
+  const collectShapes = (parent, ctx, out) => {
+    for (const el of elementsOf(parent)) {
+      if (is(el, 'draw', 'g')) {
+        collectShapes(el, ctx, out);
+        continue;
+      }
+      const stroke = ctx.styles.resolve('graphic', at(el, 'draw', 'style-name')).stroke;
+      if (is(el, 'draw', 'frame')) {
+        const textBox = findChild(el, 'draw', 'text-box');
+        const image = elementsOf(el).find((c) => is(c, 'draw', 'image') && ctx.images.has(c));
+        const table = findChild(el, 'table', 'table');
+        // Text frames have no outline unless their style gives them one
+        if (textBox) out.push({ ...shapeGeometry(el), nodes: elementsOf(textBox), plain: !stroke || stroke === 'none' });
+        else if (image) out.push({ ...shapeGeometry(el), image: ctx.images.get(image), plain: true });
+        else if (table) out.push({ ...shapeGeometry(el), nodes: [table], plain: true });
+        else ctx.skipped++;
+      } else if (el.namespaceURI === NS.draw && SHAPES.test(el.localName)) {
+        // A shape keeps its text; the shape itself (a rectangle, an arrow...) can't be drawn in Wurd
+        const nodes = elementsOf(el).filter((c) => is(c, 'text', 'p') || is(c, 'text', 'h') || is(c, 'text', 'list'));
+        if (nodes.some((n) => n.textContent.trim())) out.push({ ...shapeGeometry(el), nodes, plain: stroke === 'none' });
+        else ctx.skipped++;
+      }
+      // Notes, forms and the like have nothing to show
+    }
+    return out;
+  };
+
+  const importOdg = async (bytes, { askPassword } = {}) => {
+    const pkg = await F.odfPackage.read(bytes, { askPassword, mimePattern: ODG_TYPES, kind: 'drawing' });
+    const contentXml = await pkg.readText('content.xml');
+    if (!contentXml) throw new Wurd.UserError('This OpenDocument file has no content.');
+    const stylesXmlText = await pkg.readText('styles.xml');
+    const contentDoc = parseXml(contentXml);
+    const stylesDoc = stylesXmlText ? parseXml(stylesXmlText) : null;
+    const styles = buildStyleIndex(contentDoc, stylesDoc);
+    const page = pageGeometry(stylesDoc);
+    const ctx = { styles, pageFont: styles.pageFont, page, images: await loadImages(contentDoc, pkg), pending: [], skipped: 0 };
+    const drawing = contentDoc.getElementsByTagNameNS(NS.office, 'drawing')[0];
+    if (!drawing) throw new Wurd.UserError("This file isn't an OpenDocument drawing.");
+    const container = document.createElement('div');
+    ctx.root = container;
+    const pages = elementsOf(drawing).filter((el) => is(el, 'draw', 'page'));
+    pages.forEach((drawPage, i) => {
+      if (i) container.append(pageBreak());
+      for (const shape of collectShapes(drawPage, ctx, [])) {
+        const box = document.createElement('div');
+        box.className = 'wurd-textbox';
+        if (shape.image) {
+          const p = document.createElement('p');
+          const img = document.createElement('img');
+          img.setAttribute('src', shape.image);
+          img.setAttribute('alt', '');
+          if (shape.w) img.setAttribute('width', String(Math.round((shape.w * 4) / 3)));
+          if (shape.h) img.setAttribute('height', String(Math.round((shape.h * 4) / 3)));
+          p.append(img);
+          box.append(p);
+        } else {
+          convertBlocks(shape.nodes, box, ctx);
+          flushPending(ctx, box);
+        }
+        if (!box.hasChildNodes()) box.append(document.createElement('p'));
+        Wurd.setBoxGeometry(box, {
+          floating: true,
+          plain: shape.plain,
+          leftPct: (shape.x / page.widthPt) * 100,
+          topPt: shape.y - DRAWING_MARGIN_PT,
+          widthPct: (shape.w / page.widthPt) * 100,
+          minHeightPt: shape.image ? 0 : shape.h,
+        });
+        container.append(box);
+      }
+      // The page's own text goes here; it keeps the page as tall as the drawing's
+      const body = document.createElement('p');
+      body.setAttribute('style', `margin-top: 0; min-height: ${Math.round(Math.max(page.heightPt - 2 * DRAWING_MARGIN_PT, 72))}pt`);
+      body.append(document.createElement('br'));
+      container.append(body);
+    });
+    const left = ctx.skipped;
+    return {
+      html: container.innerHTML || '<p><br></p>',
+      font: styles.pageFont,
+      password: pkg.password,
+      notice: left ? `Loaded. ${left} shape${left === 1 ? '' : 's'} without text ${left === 1 ? 'was' : 'were'} left out.` : undefined,
+    };
+  };
+
+  // A free box as a frame on a drawing page. topPt comes from the editor's layout when saving from
+  // the page (see Wurd.textboxes.layout); without it, the box's own offset is used.
+  const drawingBoxXml = (box, ctx, topPt) => {
+    const n = ++ctx.boxCount;
+    const pageWidthPt = Wurd.PAGE_SIZES[ctx.pageSizeId].widthPt;
+    const plain = box.classList.contains('wurd-textbox--plain');
+    const content = blocksXml(box.childNodes, ctx, { parent: 'Standard', align: '', inList: false, indentPt: 0 });
+    const y = (Number.isFinite(topPt) ? topPt : pt(box.style.marginTop)) + DRAWING_MARGIN_PT;
+    const minHeight = Math.max(pt(box.style.minHeight), 14);
+    return `<draw:frame draw:style-name="${plain ? 'WurdPlain' : 'WurdBox'}" draw:name="WurdTextBox${n}" draw:z-index="${n}" svg:x="${ptToCm(percentOf(box.style.left, 0) * pageWidthPt)}" svg:y="${ptToCm(y)}" svg:width="${ptToCm(percentOf(box.style.width, 0.4) * pageWidthPt)}" svg:height="${ptToCm(minHeight)}"><draw:text-box fo:min-height="${ptToCm(minHeight)}">${content || '<text:p/>'}</draw:text-box></draw:frame>`;
+  };
+
+  const exportOdg = async (root, { title, pageFont, pageSize, password, boxLayout = null }) => {
+    const size = Wurd.PAGE_SIZES[pageSize] ? pageSize : 'a4';
+    const sheet = Wurd.PAGE_SIZES[size];
+    const margin = DRAWING_MARGIN_PT;
+    const textWidthPt = sheet.widthPt - 2 * margin;
+    const page = { width: sheet.widthCm, height: sheet.heightCm, textWidthCm: (textWidthPt / 72) * 2.54 };
+    const ctx = { ...(await newExportContext(root, pageFont, page)), drawing: true, pageSizeId: size };
+    // Pages: split at the page breaks between top-level blocks
+    const sections = [{ flow: [], boxes: [] }];
+    for (const node of root.childNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE && Wurd.isPageBreak(node)) sections.push({ flow: [], boxes: [] });
+      else if (node.nodeType === Node.ELEMENT_NODE && Wurd.isFloatingBox(node)) sections[sections.length - 1].boxes.push(node);
+      else sections[sections.length - 1].flow.push(node);
+    }
+    let boxIndex = 0;
+    const pages = sections.map((section, i) => {
+      const text = blocksXml(section.flow, ctx, { parent: 'Text_20_body', align: '', inList: false, indentPt: 0 });
+      const frames = section.boxes.map((box) => drawingBoxXml(box, ctx, boxLayout?.[boxIndex++]?.topPt)).join('');
+      const body = `<draw:frame draw:style-name="WurdBody" draw:name="Page text ${i + 1}" draw:z-index="0" svg:x="${ptToCm(margin)}" svg:y="${ptToCm(margin)}" svg:width="${ptToCm(textWidthPt)}" svg:height="${ptToCm(sheet.heightPt - 2 * margin)}"><draw:text-box>${text || '<text:p/>'}</draw:text-box></draw:frame>`;
+      return `<draw:page draw:name="page${i + 1}" draw:style-name="dp1" draw:master-page-name="Default">${body}${frames}</draw:page>`;
+    });
+    const graphic = (name, props) => `<style:style style:name="${name}" style:family="graphic"><style:graphic-properties draw:textarea-vertical-align="top" ${props}/></style:style>`;
+    const automatic = [
+      automaticStylesXml(ctx),
+      '<style:style style:name="dp1" style:family="drawing-page"/>',
+      graphic('WurdBody', 'draw:stroke="none" draw:fill="none" draw:auto-grow-height="false" fo:padding-top="0cm" fo:padding-bottom="0cm" fo:padding-left="0cm" fo:padding-right="0cm"'),
+      graphic('WurdBox', 'draw:stroke="solid" svg:stroke-color="#808080" svg:stroke-width="0.018cm" draw:fill="solid" draw:fill-color="#ffffff" draw:auto-grow-height="true" fo:padding-top="0.2cm" fo:padding-bottom="0.2cm" fo:padding-left="0.25cm" fo:padding-right="0.25cm"'),
+      graphic('WurdPlain', 'draw:stroke="none" draw:fill="none" draw:auto-grow-height="true" fo:padding-top="0.1cm" fo:padding-bottom="0.1cm" fo:padding-left="0.1cm" fo:padding-right="0.1cm"'),
+      `<text:list-style style:name="WurdL1">${listLevels('bullet')}</text:list-style>`,
+      `<text:list-style style:name="WurdL2">${listLevels('number')}</text:list-style>`,
+    ].join('');
+    const content = `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content ${NAMESPACES} office:version="${F.odfPackage.ODF_VERSION}">
+${fontFaceDecls()}
+<office:automatic-styles>${automatic}</office:automatic-styles>
+<office:body><office:drawing>${pages.join('')}</office:drawing></office:body>
+</office:document-content>
+`;
+    const parts = [
+      { path: 'content.xml', data: content, mediaType: 'text/xml' },
+      { path: 'styles.xml', data: drawingStylesXml(pageFont, page), mediaType: 'text/xml' },
+      { path: 'meta.xml', data: metaXml(title), mediaType: 'text/xml' },
+      ...Array.from(ctx.images.values(), (img) => ({ path: img.path, data: img.bytes, mediaType: img.mediaType })),
+    ];
+    return F.odfPackage.write(parts, { password, mimeType: ODG_MIME });
+  };
+
   F.odt = { import: importOdt, export: exportOdt };
+  F.odg = { import: importOdg, export: exportOdg };
 })(window.Wurd = window.Wurd || {});

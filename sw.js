@@ -6,7 +6,7 @@
 // never mixes files from two versions.
 'use strict';
 
-const VERSION = '1';
+const VERSION = '2';
 const CACHE = `wurd-${VERSION}`;
 
 // Everything the app loads, including the libraries it only loads on first use (Wurd.loadScript),
@@ -33,6 +33,9 @@ const PRECACHE = [
   'js/server.js',
   'js/drafts.js',
   'js/history.js',
+  'js/formatting.js',
+  'js/insert.js',
+  'js/textbox.js',
   'js/dialogs.js',
   'js/shortcuts.js',
   'js/app.js',

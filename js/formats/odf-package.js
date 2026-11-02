@@ -262,8 +262,9 @@ ${lines.join('\n')}
     }
   };
 
-  // Opens a package. Returns { password, readBytes(path), readText(path) }.
-  const readPackage = async (bytes, { askPassword, mimePattern = /^application\/vnd\.oasis\.opendocument\.text(-template)?$/ } = {}) => {
+  // Opens a package. Returns { password, readBytes(path), readText(path) }. kind names the type
+  // mimePattern accepts, for the message when it's something else.
+  const readPackage = async (bytes, { askPassword, mimePattern = /^application\/vnd\.oasis\.opendocument\.text(-template)?$/, kind = 'text document' } = {}) => {
     await Wurd.loadScript('lib/jszip.min.js');
     let zip;
     try {
@@ -272,7 +273,7 @@ ${lines.join('\n')}
       throw new Wurd.UserError("This file isn't a valid OpenDocument file.");
     }
     const mimetype = zip.file('mimetype') ? (await zip.file('mimetype').async('string')).trim() : '';
-    if (!mimePattern.test(mimetype)) throw new Wurd.UserError("This file isn't an OpenDocument text document.");
+    if (!mimePattern.test(mimetype)) throw new Wurd.UserError(`This file isn't an OpenDocument ${kind}.`);
     const manifestFile = zip.file('META-INF/manifest.xml');
     const manifest = manifestFile ? parseManifest(await manifestFile.async('string')) : new Map();
     const decoder = new TextDecoder('utf-8');

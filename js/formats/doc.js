@@ -308,8 +308,31 @@
 
   // ---- Save .doc (Word-HTML) --------------------------------------------------
 
-  const exportDoc = (documentRoot, { title, pageFont }) => {
+  const HIGHLIGHT_NAMES = Object.fromEntries(Object.entries(Wurd.HIGHLIGHTS).map(([name, hex]) => [hex, name]));
+
+  const exportDoc = (documentRoot, { title, pageFont, pageSize }) => {
     const body = documentRoot.cloneNode(true);
+    const page = Wurd.PAGE_SIZES[pageSize] || Wurd.PAGE_SIZES.a4;
+    // Word-HTML's page break, and its bordered box for text boxes
+    body.querySelectorAll('hr').forEach((hr) => {
+      if (!Wurd.isPageBreak(hr)) return;
+      const br = document.createElement('br');
+      br.setAttribute('clear', 'all');
+      br.setAttribute('style', 'mso-special-character:line-break;page-break-before:always');
+      hr.replaceWith(br);
+    });
+    // Word-HTML has no dependable free-floating box, so free boxes go in line where they're anchored
+    body.querySelectorAll('div.wurd-textbox').forEach((box) => {
+      const width = /%$/.test(box.style.width) && !box.classList.contains('wurd-textbox--float') ? `width:${box.style.width};` : '';
+      const border = box.classList.contains('wurd-textbox--plain') ? 'border:none;padding:1.0pt 2.0pt' : 'border:solid #808080 1.0pt;padding:4.0pt 6.0pt';
+      box.classList.remove('wurd-textbox--float');
+      box.setAttribute('style', `${width}${border};mso-element:para-border-div`);
+    });
+    // Highlights Word knows by name; other backgrounds stay as shading
+    body.querySelectorAll('[style*="background"]').forEach((el) => {
+      const name = HIGHLIGHT_NAMES[Wurd.colorToHex(el.style.backgroundColor)];
+      if (name) el.setAttribute('style', `${el.getAttribute('style').replace(/;?\s*$/, '')};mso-highlight:${name}`);
+    });
     // Word honours table border attributes more reliably than CSS borders
     body.querySelectorAll('table').forEach((table) => {
       table.setAttribute('border', '1');
@@ -319,6 +342,9 @@
     // Word uses the first font in a list; it has Georgia and Courier New but not Inter
     body.querySelectorAll('font[face]').forEach((font) => {
       if (/^\s*["']?Inter\b/i.test(font.getAttribute('face'))) font.setAttribute('face', 'Arial, sans-serif');
+    });
+    body.querySelectorAll('[style*="font-family"]').forEach((el) => {
+      if (/^\s*["']?Inter\b/i.test(el.style.fontFamily)) el.style.fontFamily = 'Arial, sans-serif';
     });
     const esc = Wurd.escapeXml;
     const font = F.docx.wordFont(pageFont);
@@ -332,7 +358,7 @@
 <title>${esc(title)}</title>
 <!--[if gte mso 9]><xml><o:DocumentProperties><o:Title>${esc(title)}</o:Title></o:DocumentProperties><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
 <style>
-@page WordSection1 { size: 595.3pt 841.9pt; margin: 72pt; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
+@page WordSection1 { size: ${page.widthPt}pt ${page.heightPt}pt; margin: 72pt; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
 div.WordSection1 { page: WordSection1; }
 body, p, li, td, th { font-family: "${font}"; font-size: 12pt; }
 p { margin: 0 0 8pt; }

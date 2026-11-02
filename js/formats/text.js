@@ -105,7 +105,8 @@
         blocks.push(tableText(node));
       } else if (tag === 'HR') {
         flush();
-        blocks.push('-'.repeat(10));
+        // A page break is just the gap between paragraphs in plain text
+        if (!Wurd.isPageBreak(node)) blocks.push('-'.repeat(10));
       } else if (BLOCK_TAGS.has(tag)) {
         flush();
         node.childNodes.forEach(walk);
