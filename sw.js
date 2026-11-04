@@ -6,7 +6,7 @@
 // never mixes files from two versions.
 'use strict';
 
-const VERSION = '2';
+const VERSION = '3';
 const CACHE = `wurd-${VERSION}`;
 
 // Everything the app loads, including the libraries it only loads on first use (Wurd.loadScript),

@@ -487,6 +487,17 @@ img {
   display: none;
 }
 
+/* Update: tinted like the update banner so a waiting version stays noticeable */
+.header-btn--update,
+.header-btn--update:hover {
+  background: var(--pressed-bg);
+  color: var(--pressed-fg);
+}
+
+.header-btn--update:hover {
+  box-shadow: inset 0 0 0 1px var(--pressed-border);
+}
+
 .save-btn {
   display: flex;
   align-items: center;

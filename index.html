@@ -64,6 +64,11 @@
             <i data-lucide="monitor-down" class="icon"></i>
             <span class="header-btn__label">Install</span>
           </button>
+          <!-- Shown by js/pwa.js while a new version is waiting; stays after the update banner is dismissed -->
+          <button type="button" class="header-btn header-btn--update" id="update-app" title="Update Wurd to the new version" aria-label="Update app" hidden>
+            <i data-lucide="refresh-cw" class="icon"></i>
+            <span class="header-btn__label">Update</span>
+          </button>
           <button type="button" class="header-btn" id="new-doc" title="New Document" aria-label="New" data-shortcut="new">
             <i data-lucide="file-text" class="icon"></i>
             <span class="header-btn__label">New</span>

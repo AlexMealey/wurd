@@ -10,6 +10,7 @@
   const editor = $('#editor');
   const installButton = $('#install-app');
   const updateBanner = $('#update-banner');
+  const updateButton = $('#update-app');
 
   // ---- Title bar ----------------------------------------------------------
 
@@ -84,6 +85,8 @@
 
   const showUpdate = (worker) => {
     waitingWorker = worker;
+    // The header button stays until Wurd updates, so choosing Later never loses the update
+    updateButton.hidden = false;
     if (!updateBanner.hidden) return;
     updateBanner.hidden = false;
     Wurd.app.announce('A new version of Wurd is ready. Reload to use it.');
@@ -96,12 +99,15 @@
 
   // The new version takes over, then the page reloads into it. The open document comes back as a
   // draft (js/drafts.js), or the browser asks first when it can't be kept.
-  $('#update-reload').addEventListener('click', () => {
+  const applyUpdate = () => {
     reloading = true;
     if (waitingWorker?.state === 'installed') waitingWorker.postMessage('skip-waiting');
     // Another tab may already have switched to the new version
     else location.reload();
-  });
+  };
+
+  $('#update-reload').addEventListener('click', applyUpdate);
+  updateButton.addEventListener('click', applyUpdate);
 
   $('#update-later').addEventListener('click', hideUpdate);
 
